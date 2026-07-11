@@ -35,11 +35,12 @@ export default function ResponseBuilder({ responses, onChange }) {
               ))}
             </select>
             <StatusBadge code={resp.statusCode} />
-            <input
+            <textarea
               value={resp.description || ''}
               onChange={e => update(idx, 'description', e.target.value)}
-              placeholder="Описание ответа"
-              className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              placeholder="Описание ответа (поддерживается Markdown)"
+              rows={1}
+              className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
             />
             <button onClick={() => remove(idx)} className="text-red-400 hover:text-red-600 text-sm">✕</button>
           </div>

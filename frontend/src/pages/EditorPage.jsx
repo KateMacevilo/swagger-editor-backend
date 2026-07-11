@@ -243,8 +243,8 @@ export default function EditorPage() {
               <textarea
                 value={form.description || ''}
                 onChange={e => setForm({ ...form, description: e.target.value })}
-                rows={2}
-                placeholder="Подробное описание эндпоинта"
+                rows={3}
+                placeholder="Подробное описание эндпоинта (поддерживается Markdown: - пункт 1, - пункт 2)"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
               />
             </div>

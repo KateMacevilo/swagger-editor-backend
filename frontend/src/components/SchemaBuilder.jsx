@@ -22,12 +22,12 @@ function FieldRow({ field, onChange, onRemove, depth = 0 }) {
         >
           {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
         </select>
-        <input
-          type="text"
+        <textarea
           value={field.description || ''}
           onChange={e => onChange({ ...field, description: e.target.value })}
-          placeholder="description"
-          className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+          placeholder="description (Markdown supported)"
+          rows={1}
+          className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
         />
         <label className="flex items-center gap-1 text-xs text-gray-600 whitespace-nowrap">
           <input

@@ -79,7 +79,7 @@ Node.js установлен через Homebrew: `/opt/homebrew/bin/node` (v26.
 
 **OpenAPI generation:** `OpenApiService.buildOpenApi(projectId)` constructs the full `OpenAPI` object using `swagger-models` and serializes via `io.swagger.v3.core.util.Json` / `Yaml`. Import uses `OpenAPIV3Parser` from `swagger-parser`.
 
-**Preview refresh:** `EditorPage` holds a `previewKey` integer that increments after every save. `SwaggerPreview` re-fetches `GET /api/projects/{id}/spec` whenever `previewKey` changes.
+**Preview refresh:** `EditorPage` holds a `previewKey` integer that increments after every save. `SwaggerPreview` re-fetches `GET /api/projects/{id}/spec` whenever `previewKey` changes. Swagger UI natively renders Markdown in descriptions, so multi-line text and lists (e.g. `- item`) are displayed correctly.
 
 **Vite proxy:** All `/api/*` calls from the frontend go through the Vite dev server proxy to `:8080`, so no CORS issues during development and no hardcoded backend URL in frontend code.
 
@@ -118,7 +118,7 @@ Node.js установлен через Homebrew: `/opt/homebrew/bin/node` (v26.
 
 **Frontend**
 - `react` 18, `react-router-dom` 6, `axios`
-- `swagger-ui-react` 5 — embedded Swagger UI
+- `swagger-ui-react` 5 — embedded Swagger UI (renders Markdown in descriptions)
 - `tailwindcss` 3, `vite` 5
 
 **Runtime** (verified 2026-06-13)

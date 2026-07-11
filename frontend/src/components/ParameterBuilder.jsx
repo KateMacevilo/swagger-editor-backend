@@ -74,11 +74,12 @@ export default function ParameterBuilder({ parameters, onChange }) {
             <button onClick={() => remove(idx)} className="ml-auto text-red-400 hover:text-red-600 text-sm">✕</button>
           </div>
           <div className="flex gap-2 mt-2">
-            <input
+            <textarea
               value={param.description || ''}
               onChange={e => update(idx, 'description', e.target.value)}
-              placeholder="Описание"
-              className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              placeholder="Описание (поддерживается Markdown: - пункт 1, - пункт 2)"
+              rows={2}
+              className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
             />
             <input
               value={param.example || ''}

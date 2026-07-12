@@ -1,0 +1,58 @@
+{
+  "openapi" : "3.0.0",
+  "info" : {
+    "title" : "api-test2",
+    "description" : "Описание",
+    "contact" : {
+      "email" : ""
+    },
+    "license" : {
+      "name" : ""
+    },
+    "version" : "1.0.0"
+  },
+  "servers" : [ {
+    "url" : "http://localhost:8080",
+    "description" : "Development server"
+  } ],
+  "paths" : {
+    "/api/fix" : {
+      "put" : {
+        "summary" : "Descriotion",
+        "description" : "fhgmjfhdsjhfgjhds",
+        "operationId" : "",
+        "parameters" : [ {
+          "name" : "week",
+          "in" : "query",
+          "description" : "",
+          "required" : true,
+          "schema" : {
+            "type" : "integer",
+            "format" : "int32"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "type" : "object",
+                "properties" : {
+                  "name" : {
+                    "type" : "string",
+                    "description" : "Имя пользователя"
+                  }
+                }
+              }
+            }
+          },
+          "required" : false
+        },
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        }
+      }
+    }
+  }
+}

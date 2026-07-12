@@ -15,5 +15,18 @@
     "url" : "http://localhost:8080",
     "description" : "Development server"
   } ],
-  "paths" : { }
+  "paths" : {
+    "/api/testt/t/tt" : {
+      "get" : {
+        "summary" : "",
+        "description" : "",
+        "operationId" : "",
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        }
+      }
+    }
+  }
 }

@@ -27,6 +27,18 @@
           }
         }
       }
+    },
+    "/api/test2" : {
+      "post" : {
+        "summary" : "",
+        "description" : "",
+        "operationId" : "",
+        "responses" : {
+          "200" : {
+            "description" : "OK"
+          }
+        }
+      }
     }
   }
 }

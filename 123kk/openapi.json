@@ -1,0 +1,19 @@
+{
+  "openapi" : "3.0.0",
+  "info" : {
+    "title" : "123kk",
+    "description" : "",
+    "contact" : {
+      "email" : ""
+    },
+    "license" : {
+      "name" : ""
+    },
+    "version" : "1.0.0"
+  },
+  "servers" : [ {
+    "url" : "http://localhost:8080",
+    "description" : "Development server"
+  } ],
+  "paths" : { }
+}

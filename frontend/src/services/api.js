@@ -9,33 +9,16 @@ export const createProject = (data) => axios.post(`${BASE}/projects`, data).then
 export const updateProject = (id, data) => axios.put(`${BASE}/projects/${id}`, data).then(r => r.data)
 export const deleteProject = (id) => axios.delete(`${BASE}/projects/${id}`)
 
-// Endpoints
-export const getEndpoints = (projectId) =>
-  axios.get(`${BASE}/projects/${projectId}/endpoints`).then(r => r.data)
+// Spec preview
+export const getSpecJson = (project) =>
+  axios.post(`${BASE}/spec/json`, project, {
+    headers: { 'Content-Type': 'application/json' }
+  }).then(r => r.data)
 
-export const getEndpoint = (projectId, id) =>
-  axios.get(`${BASE}/projects/${projectId}/endpoints/${id}`).then(r => r.data)
-
-export const createEndpoint = (projectId, data) =>
-  axios.post(`${BASE}/projects/${projectId}/endpoints`, data).then(r => r.data)
-
-export const updateEndpoint = (projectId, id, data) =>
-  axios.put(`${BASE}/projects/${projectId}/endpoints/${id}`, data).then(r => r.data)
-
-export const deleteEndpoint = (projectId, id) =>
-  axios.delete(`${BASE}/projects/${projectId}/endpoints/${id}`)
-
-// Spec
-export const getSpecJson = (projectId) =>
-  axios.get(`${BASE}/projects/${projectId}/spec`).then(r => r.data)
-
-export const downloadJson = (projectId) => {
-  window.open(`${BASE}/projects/${projectId}/spec/download/json`, '_blank')
-}
-
-export const downloadYaml = (projectId) => {
-  window.open(`${BASE}/projects/${projectId}/spec/download/yaml`, '_blank')
-}
+export const getSpecYaml = (project) =>
+  axios.post(`${BASE}/spec/yaml`, project, {
+    headers: { 'Content-Type': 'application/json' }
+  }).then(r => r.data)
 
 // Import
 export const importFile = (file) => {
@@ -45,3 +28,8 @@ export const importFile = (file) => {
     headers: { 'Content-Type': 'multipart/form-data' }
   }).then(r => r.data)
 }
+
+export const importText = (text) =>
+  axios.post(`${BASE}/import/text`, text, {
+    headers: { 'Content-Type': 'text/plain' }
+  }).then(r => r.data)

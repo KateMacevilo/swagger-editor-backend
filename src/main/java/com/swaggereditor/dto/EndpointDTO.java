@@ -7,8 +7,8 @@ import java.util.List;
 
 @Data
 public class EndpointDTO {
-    private Long id;
-    private Long projectId;
+    private String id;
+    private String projectId;
 
     @NotBlank(message = "Path is required")
     private String path;

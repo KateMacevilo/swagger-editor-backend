@@ -1,0 +1,81 @@
+# Default values for swagger-editor-backend.
+# This file is safe to commit. Override secrets and local settings in
+# values-local.yaml or via --set (see README / AGENTS.md).
+
+replicaCount: 1
+
+image:
+  repository: swagger-editor-backend
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: false
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: swagger-editor.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 250m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# GitHub integration settings. These are NOT secrets and can be kept here.
+github:
+  owner: ""
+  repo: ""
+  branch: "main"
+
+# GitHub Personal Access Token. This is a SECRET.
+# Leave empty in this file and provide it during installation, for example:
+#   helm install swagger-editor ./chart -f values-local.yaml
+# where values-local.yaml contains:
+#   github:
+#     token: "ghp_xxxxxxxxxxxxxxxxxxxx"
+githubToken: ""
+
+# Spring Boot configuration (non-sensitive).
+serverPort: 8080
+multipartMaxFileSize: 10MB
+multipartMaxRequestSize: 10MB

@@ -5,7 +5,7 @@ import lombok.Data;
 
 @Data
 public class ApiResponseDTO {
-    private Long id;
+    private String id;
 
     @NotBlank(message = "Status code is required")
     private String statusCode;

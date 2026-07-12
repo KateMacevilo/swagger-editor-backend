@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "swagger-editor-backend.fullname" . }}-config
+  labels:
+    {{- include "swagger-editor-backend.labels" . | nindent 4 }}
+data:
+  GITHUB_OWNER: {{ .Values.github.owner | quote }}
+  GITHUB_REPO: {{ .Values.github.repo | quote }}
+  GITHUB_BRANCH: {{ .Values.github.branch | quote }}
+  SERVER_PORT: {{ .Values.serverPort | quote }}
+  SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: {{ .Values.multipartMaxFileSize | quote }}
+  SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: {{ .Values.multipartMaxRequestSize | quote }}

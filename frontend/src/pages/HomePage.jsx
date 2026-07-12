@@ -19,8 +19,15 @@ export default function HomePage() {
   useEffect(() => { load() }, [])
 
   async function load() {
-    const data = await getProjects()
-    setProjects(data)
+    setLoading(true)
+    try {
+      const data = await getProjects()
+      setProjects(data)
+    } catch (err) {
+      alert('Ошибка загрузки проектов из GitHub: ' + (err.response?.data?.message || err.message))
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function handleCreate(e) {
@@ -64,6 +71,13 @@ export default function HomePage() {
           <p className="text-gray-500 text-sm mt-1">Визуальный конструктор OpenAPI 3.0 спецификаций</p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={load}
+            disabled={loading}
+            className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition disabled:opacity-50"
+          >
+            {loading ? 'Загрузка...' : 'Обновить из GitHub'}
+          </button>
           <button
             onClick={() => fileRef.current.click()}
             className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 transition"

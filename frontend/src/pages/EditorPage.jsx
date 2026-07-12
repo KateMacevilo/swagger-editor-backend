@@ -1,10 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
-import {
-  getProject, updateProject,
-  getEndpoints, createEndpoint, updateEndpoint, deleteEndpoint,
-  downloadJson, downloadYaml
-} from '../services/api'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import { useParams, Link, useNavigate } from 'react-router-dom'
+import { getProject, updateProject, getSpecJson, getSpecYaml } from '../services/api'
 import ParameterBuilder from '../components/ParameterBuilder'
 import ResponseBuilder from '../components/ResponseBuilder'
 import SchemaBuilder from '../components/SchemaBuilder'
@@ -28,23 +24,41 @@ const EMPTY_ENDPOINT = {
   parameters: [], responses: []
 }
 
+const DEFAULT_PROJECT = {
+  id: '', title: '', description: '', version: '1.0.0',
+  termsOfService: '', contactEmail: '', licenseName: '',
+  serverUrl: '', serverDescription: '', endpoints: []
+}
+
 export default function EditorPage() {
   const { projectId } = useParams()
+  const navigate = useNavigate()
   const [project, setProject] = useState(null)
-  const [endpoints, setEndpoints] = useState([])
   const [selectedEndpoint, setSelectedEndpoint] = useState(null)
   const [form, setForm] = useState(EMPTY_ENDPOINT)
   const [isNew, setIsNew] = useState(false)
   const [activeTab, setActiveTab] = useState('params')
   const [saving, setSaving] = useState(false)
-  const [previewKey, setPreviewKey] = useState(0)
+  const [saveError, setSaveError] = useState(null)
+  const [spec, setSpec] = useState(null)
+  const [loadingSpec, setLoadingSpec] = useState(false)
   const [showProjectEdit, setShowProjectEdit] = useState(false)
-  const [projectForm, setProjectForm] = useState({})
+  const [projectForm, setProjectForm] = useState(DEFAULT_PROJECT)
+
+  const debounceRef = useRef(null)
 
   useEffect(() => {
     loadProject()
-    loadEndpoints()
   }, [projectId])
+
+  useEffect(() => {
+    if (!project) return
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      refreshPreview(project)
+    }, 400)
+    return () => clearTimeout(debounceRef.current)
+  }, [project])
 
   async function loadProject() {
     const p = await getProject(projectId)
@@ -52,9 +66,16 @@ export default function EditorPage() {
     setProjectForm(p)
   }
 
-  async function loadEndpoints() {
-    const list = await getEndpoints(projectId)
-    setEndpoints(list)
+  async function refreshPreview(p) {
+    setLoadingSpec(true)
+    try {
+      const json = await getSpecJson(p)
+      setSpec(json)
+    } catch (err) {
+      console.error('Preview error', err)
+    } finally {
+      setLoadingSpec(false)
+    }
   }
 
   function selectEndpoint(ep) {
@@ -71,44 +92,70 @@ export default function EditorPage() {
     setActiveTab('params')
   }
 
-  async function handleSave(e) {
+  function updateEndpoints(updater) {
+    setProject(prev => ({ ...prev, endpoints: updater(prev.endpoints || []) }))
+  }
+
+  async function handleSaveEndpoint(e) {
     e.preventDefault()
     if (!form.path || !form.method) return
-    setSaving(true)
-    try {
-      let saved
-      if (isNew) {
-        saved = await createEndpoint(projectId, form)
-        setEndpoints(prev => [...prev, saved])
-      } else {
-        saved = await updateEndpoint(projectId, selectedEndpoint.id, form)
-        setEndpoints(prev => prev.map(ep => ep.id === saved.id ? saved : ep))
-      }
-      setSelectedEndpoint(saved)
-      setForm({ ...saved })
+    const endpoint = { ...form }
+    if (isNew) {
+      updateEndpoints(prev => [...prev, endpoint])
+    } else {
+      updateEndpoints(prev => prev.map(ep => ep === selectedEndpoint ? endpoint : ep))
+    }
+    setSelectedEndpoint(endpoint)
+    setForm({ ...endpoint })
+    setIsNew(false)
+  }
+
+  function handleDeleteEndpoint(ep) {
+    if (!confirm(`Удалить ${ep.method} ${ep.path}?`)) return
+    updateEndpoints(prev => prev.filter(e => e !== ep))
+    if (selectedEndpoint === ep) {
+      setSelectedEndpoint(null)
+      setForm({ ...EMPTY_ENDPOINT })
       setIsNew(false)
-      setPreviewKey(k => k + 1)
+    }
+  }
+
+  async function handleSaveProject() {
+    const updated = { ...projectForm, endpoints: project.endpoints }
+    setSaving(true)
+    setSaveError(null)
+    try {
+      await updateProject(projectId, updated)
+      setProject(updated)
+      setShowProjectEdit(false)
+    } catch (err) {
+      const message = err.response?.data?.message || err.message || 'Ошибка сохранения'
+      setSaveError(message)
     } finally {
       setSaving(false)
     }
   }
 
-  async function handleDelete(ep) {
-    if (!confirm(`Удалить ${ep.method} ${ep.path}?`)) return
-    await deleteEndpoint(projectId, ep.id)
-    setEndpoints(prev => prev.filter(e => e.id !== ep.id))
-    if (selectedEndpoint?.id === ep.id) {
-      setSelectedEndpoint(null)
-      setForm({ ...EMPTY_ENDPOINT })
-    }
-    setPreviewKey(k => k + 1)
+  async function downloadJson() {
+    if (!project) return
+    const blob = new Blob([await getSpecJson(project)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'openapi.json'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
-  async function handleProjectSave() {
-    const updated = await updateProject(projectId, projectForm)
-    setProject(updated)
-    setShowProjectEdit(false)
-    setPreviewKey(k => k + 1)
+  async function downloadYaml() {
+    if (!project) return
+    const blob = new Blob([await getSpecYaml(project)], { type: 'application/x-yaml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'openapi.yaml'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const hasBody = ['POST', 'PUT', 'PATCH'].includes(form.method)
@@ -120,7 +167,7 @@ export default function EditorPage() {
   return (
     <div className="flex h-[calc(100vh-56px)] overflow-hidden">
 
-      {/* ===== LEFT PANEL: Endpoint list ===== */}
+      {/* LEFT PANEL */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
         <div className="p-3 border-b border-gray-200">
           <Link to="/" className="text-xs text-gray-400 hover:text-blue-600 transition">← Все проекты</Link>
@@ -134,24 +181,22 @@ export default function EditorPage() {
         </div>
 
         <div className="p-2">
-          <button
-            onClick={startNew}
-            className="w-full py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
-          >
+          <button onClick={startNew}
+            className="w-full py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium">
             + Новый эндпоинт
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-2 pb-2">
-          {endpoints.length === 0 && (
+          {project.endpoints?.length === 0 && (
             <p className="text-xs text-gray-400 text-center mt-6">Нет эндпоинтов</p>
           )}
-          {endpoints.map(ep => (
+          {project.endpoints?.map((ep, idx) => (
             <div
-              key={ep.id}
+              key={idx}
               onClick={() => selectEndpoint(ep)}
               className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer mb-1 group transition ${
-                selectedEndpoint?.id === ep.id ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
+                selectedEndpoint === ep ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
               }`}
             >
               <span className={`text-xs font-bold px-1.5 py-0.5 rounded border ${METHOD_COLORS[ep.method] || METHOD_COLORS.GET} flex-shrink-0`}>
@@ -159,32 +204,31 @@ export default function EditorPage() {
               </span>
               <span className="text-xs font-mono text-gray-700 truncate flex-1">{ep.path}</span>
               <button
-                onClick={e => { e.stopPropagation(); handleDelete(ep) }}
+                onClick={e => { e.stopPropagation(); handleDeleteEndpoint(ep) }}
                 className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition text-xs flex-shrink-0"
               >✕</button>
             </div>
           ))}
         </div>
 
-        {/* Export buttons */}
+        {/* Save & Export */}
         <div className="p-2 border-t border-gray-200 space-y-1">
-          <p className="text-xs text-gray-400 px-1 mb-1">Экспорт спецификации</p>
-          <button
-            onClick={() => downloadJson(projectId)}
-            className="w-full py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-          >
-            JSON
+          <button onClick={handleSaveProject} disabled={saving}
+            className="w-full py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition disabled:opacity-50">
+            {saving ? 'Сохранение...' : 'Сохранить на GitHub'}
           </button>
-          <button
-            onClick={() => downloadYaml(projectId)}
-            className="w-full py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition"
-          >
-            YAML
-          </button>
+          {saveError && (
+            <p className="text-[10px] text-red-600 px-1 break-words">{saveError}</p>
+          )}
+          <p className="text-xs text-gray-400 px-1 mb-1 mt-2">Экспорт спецификации</p>
+          <button onClick={downloadJson}
+            className="w-full py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition">JSON</button>
+          <button onClick={downloadYaml}
+            className="w-full py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition">YAML</button>
         </div>
       </aside>
 
-      {/* ===== CENTER PANEL: Editor form ===== */}
+      {/* CENTER PANEL */}
       <main className="flex-1 overflow-y-auto bg-gray-50 border-r border-gray-200">
         {!selectedEndpoint && !isNew ? (
           <div className="flex flex-col items-center justify-center h-full text-gray-400">
@@ -192,98 +236,71 @@ export default function EditorPage() {
             <p>Выберите эндпоинт или создайте новый</p>
           </div>
         ) : (
-          <form onSubmit={handleSave} className="p-5 space-y-5">
-            {/* Method + Path */}
+          <form onSubmit={handleSaveEndpoint} className="p-5 space-y-5">
             <div>
               <h3 className="text-base font-semibold text-gray-900 mb-3">
                 {isNew ? 'Новый эндпоинт' : 'Редактирование эндпоинта'}
               </h3>
               <div className="flex gap-2">
-                <select
-                  value={form.method}
+                <select value={form.method}
                   onChange={e => setForm({ ...form, method: e.target.value })}
-                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-bold focus:outline-none focus:ring-2 focus:ring-blue-500">
                   {METHODS.map(m => <option key={m} value={m}>{m}</option>)}
                 </select>
-                <input
-                  required
-                  value={form.path}
+                <input required value={form.path}
                   onChange={e => setForm({ ...form, path: e.target.value })}
                   placeholder="/api/resource/{id}"
-                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
 
-            {/* Summary / Description */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Summary</label>
-                <input
-                  value={form.summary || ''}
+                <input value={form.summary || ''}
                   onChange={e => setForm({ ...form, summary: e.target.value })}
                   placeholder="Краткое описание"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Tags (через запятую)</label>
-                <input
-                  value={form.tags || ''}
+                <input value={form.tags || ''}
                   onChange={e => setForm({ ...form, tags: e.target.value })}
                   placeholder="users, auth"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">Description</label>
-              <textarea
-                value={form.description || ''}
+              <textarea value={form.description || ''}
                 onChange={e => setForm({ ...form, description: e.target.value })}
-                rows={3}
-                placeholder="Подробное описание эндпоинта (поддерживается Markdown: - пункт 1, - пункт 2)"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-              />
+                rows={3} placeholder="Подробное описание эндпоинта"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none" />
             </div>
 
             <div className="flex items-center gap-3">
               <div className="flex-1">
                 <label className="block text-xs font-medium text-gray-600 mb-1">Operation ID</label>
-                <input
-                  value={form.operationId || ''}
+                <input value={form.operationId || ''}
                   onChange={e => setForm({ ...form, operationId: e.target.value })}
                   placeholder="getUser"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
               <div className="flex items-center gap-2 mt-4">
-                <input
-                  type="checkbox"
-                  id="deprecated"
-                  checked={form.deprecated || false}
-                  onChange={e => setForm({ ...form, deprecated: e.target.checked })}
-                />
+                <input type="checkbox" id="deprecated" checked={form.deprecated || false}
+                  onChange={e => setForm({ ...form, deprecated: e.target.checked })} />
                 <label htmlFor="deprecated" className="text-sm text-gray-600">Deprecated</label>
               </div>
             </div>
 
-            {/* Tabs */}
             <div className="border-b border-gray-200">
               <div className="flex gap-0">
                 {['params', ...(hasBody ? ['body'] : []), 'responses'].map(tab => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setActiveTab(tab)}
+                  <button key={tab} type="button" onClick={() => setActiveTab(tab)}
                     className={`px-4 py-2 text-sm font-medium transition ${
-                      activeTab === tab
-                        ? 'border-b-2 border-blue-600 text-blue-600'
-                        : 'text-gray-500 hover:text-gray-700'
-                    }`}
-                  >
+                      activeTab === tab ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-500 hover:text-gray-700'
+                    }`}>
                     {tab === 'params' && `Параметры (${form.parameters?.length || 0})`}
                     {tab === 'body' && 'Request Body'}
                     {tab === 'responses' && `Ответы (${form.responses?.length || 0})`}
@@ -293,53 +310,38 @@ export default function EditorPage() {
             </div>
 
             {activeTab === 'params' && (
-              <ParameterBuilder
-                parameters={form.parameters || []}
-                onChange={params => setForm({ ...form, parameters: params })}
-              />
+              <ParameterBuilder parameters={form.parameters || []}
+                onChange={params => setForm({ ...form, parameters: params })} />
             )}
 
             {activeTab === 'body' && hasBody && (
               <div>
                 <div className="flex items-center gap-3 mb-3">
                   <label className="flex items-center gap-2 text-sm text-gray-700">
-                    <input
-                      type="checkbox"
-                      checked={form.requestBodyRequired || false}
-                      onChange={e => setForm({ ...form, requestBodyRequired: e.target.checked })}
-                    />
+                    <input type="checkbox" checked={form.requestBodyRequired || false}
+                      onChange={e => setForm({ ...form, requestBodyRequired: e.target.checked })} />
                     Required
                   </label>
                   <span className="text-xs text-gray-400">Content-Type: application/json</span>
                 </div>
-                <SchemaBuilder
-                  value={form.requestBodySchema}
-                  onChange={v => setForm({ ...form, requestBodySchema: v })}
-                />
+                <SchemaBuilder value={form.requestBodySchema}
+                  onChange={v => setForm({ ...form, requestBodySchema: v })} />
               </div>
             )}
 
             {activeTab === 'responses' && (
-              <ResponseBuilder
-                responses={form.responses || []}
-                onChange={responses => setForm({ ...form, responses })}
-              />
+              <ResponseBuilder responses={form.responses || []}
+                onChange={responses => setForm({ ...form, responses })} />
             )}
 
             <div className="flex gap-3 pt-2">
-              <button
-                type="submit"
-                disabled={saving}
-                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium disabled:opacity-50"
-              >
-                {saving ? 'Сохранение...' : isNew ? 'Создать' : 'Сохранить'}
+              <button type="submit" disabled={saving}
+                className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm font-medium disabled:opacity-50">
+                {isNew ? 'Добавить' : 'Обновить'}
               </button>
               {!isNew && (
-                <button
-                  type="button"
-                  onClick={() => handleDelete(selectedEndpoint)}
-                  className="px-4 py-2.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition text-sm"
-                >
+                <button type="button" onClick={() => handleDeleteEndpoint(selectedEndpoint)}
+                  className="px-4 py-2.5 border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition text-sm">
                   Удалить
                 </button>
               )}
@@ -348,17 +350,18 @@ export default function EditorPage() {
         )}
       </main>
 
-      {/* ===== RIGHT PANEL: Swagger Preview ===== */}
+      {/* RIGHT PANEL */}
       <aside className="w-[42%] flex flex-col bg-white overflow-hidden">
-        <div className="px-4 py-2 border-b border-gray-200 flex-shrink-0">
+        <div className="px-4 py-2 border-b border-gray-200 flex-shrink-0 flex justify-between items-center">
           <span className="text-sm font-medium text-gray-700">Предпросмотр спецификации</span>
+          {loadingSpec && <span className="text-xs text-gray-400">обновление...</span>}
         </div>
         <div className="flex-1 overflow-auto p-2">
-          <SwaggerPreview projectId={projectId} refreshKey={previewKey} />
+          <SwaggerPreview spec={spec} />
         </div>
       </aside>
 
-      {/* ===== Project Edit Modal ===== */}
+      {/* Project Edit Modal */}
       {showProjectEdit && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg space-y-3">
@@ -371,19 +374,18 @@ export default function EditorPage() {
               ['Описание сервера', 'serverDescription'],
               ['Контакт email', 'contactEmail'],
               ['Лицензия', 'licenseName'],
+              ['Terms of service URL', 'termsOfService'],
             ].map(([label, key, req]) => (
               <div key={key}>
                 <label className="block text-xs font-medium text-gray-600 mb-1">{label}</label>
-                <input
-                  value={projectForm[key] || ''}
+                <input value={projectForm[key] || ''}
                   onChange={e => setProjectForm({ ...projectForm, [key]: e.target.value })}
                   required={req}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             ))}
             <div className="flex gap-3 pt-2">
-              <button onClick={handleProjectSave}
+              <button onClick={handleSaveProject}
                 className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
                 Сохранить
               </button>

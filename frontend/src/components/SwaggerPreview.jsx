@@ -1,25 +1,23 @@
 import { useEffect, useState } from 'react'
 import SwaggerUI from 'swagger-ui-react'
 import 'swagger-ui-react/swagger-ui.css'
-import { getSpecJson } from '../services/api'
 
-export default function SwaggerPreview({ projectId, refreshKey }) {
-  const [spec, setSpec] = useState(null)
+export default function SwaggerPreview({ spec }) {
   const [raw, setRaw] = useState('')
   const [tab, setTab] = useState('ui')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    if (!projectId) return
+    if (!spec) return
     setLoading(true)
-    getSpecJson(projectId)
-      .then(data => {
-        setSpec(data)
-        setRaw(typeof data === 'string' ? data : JSON.stringify(data, null, 2))
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false))
-  }, [projectId, refreshKey])
+    try {
+      const rawText = typeof spec === 'string' ? spec : JSON.stringify(spec, null, 2)
+      setRaw(rawText)
+    } finally {
+      // small delay to avoid flicker
+      setTimeout(() => setLoading(false), 100)
+    }
+  }, [spec])
 
   if (loading) return (
     <div className="flex items-center justify-center h-48 text-gray-400">

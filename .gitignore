@@ -20,3 +20,19 @@ frontend/.vite/
 
 # H2 file database (if switched from in-memory)
 data/
+node_modules/
+build/
+*.log
+
+# Local environment / secrets
+.env
+.env.local
+.env.*.local
+application-local.properties
+application-*.local.properties
+
+# Helm local overrides (may contain secrets or cluster-specific values)
+chart/values-local.yaml
+chart/values-override.yaml
+chart/*/values-local.yaml
+chart/*/values-override.yaml

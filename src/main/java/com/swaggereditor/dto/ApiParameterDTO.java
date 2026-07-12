@@ -5,7 +5,7 @@ import lombok.Data;
 
 @Data
 public class ApiParameterDTO {
-    private Long id;
+    private String id;
 
     @NotBlank(message = "Parameter name is required")
     private String name;

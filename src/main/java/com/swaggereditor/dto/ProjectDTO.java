@@ -8,7 +8,7 @@ import java.util.List;
 
 @Data
 public class ProjectDTO {
-    private Long id;
+    private String id;
 
     @NotBlank(message = "Title is required")
     private String title;
@@ -24,4 +24,8 @@ public class ProjectDTO {
     private LocalDateTime updatedAt;
     private List<EndpointDTO> endpoints;
     private int endpointCount;
+
+    private String githubFilePath;
+    private String githubLastCommitSha;
+    private LocalDateTime githubLastPublishedAt;
 }

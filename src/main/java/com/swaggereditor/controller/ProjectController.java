@@ -1,6 +1,7 @@
 package com.swaggereditor.controller;
 
 import com.swaggereditor.dto.ProjectDTO;
+import com.swaggereditor.dto.ProjectSummaryDTO;
 import com.swaggereditor.service.ProjectService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -19,12 +20,12 @@ public class ProjectController {
     private final ProjectService projectService;
 
     @GetMapping
-    public List<ProjectDTO> getAll() {
+    public List<ProjectSummaryDTO> getAll() {
         return projectService.findAll();
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<ProjectDTO> getById(@PathVariable Long id) {
+    public ResponseEntity<ProjectDTO> getById(@PathVariable String id) {
         try {
             return ResponseEntity.ok(projectService.findById(id));
         } catch (NoSuchElementException e) {
@@ -33,21 +34,17 @@ public class ProjectController {
     }
 
     @PostMapping
-    public ResponseEntity<ProjectDTO> create(@Valid @RequestBody ProjectDTO dto) {
+    public ResponseEntity<ProjectSummaryDTO> create(@Valid @RequestBody ProjectDTO dto) {
         return ResponseEntity.status(HttpStatus.CREATED).body(projectService.create(dto));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ProjectDTO> update(@PathVariable Long id, @Valid @RequestBody ProjectDTO dto) {
-        try {
-            return ResponseEntity.ok(projectService.update(id, dto));
-        } catch (NoSuchElementException e) {
-            return ResponseEntity.notFound().build();
-        }
+    public ResponseEntity<ProjectSummaryDTO> update(@PathVariable String id, @Valid @RequestBody ProjectDTO dto) {
+        return ResponseEntity.ok(projectService.update(id, dto));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(@PathVariable Long id) {
+    public ResponseEntity<Void> delete(@PathVariable String id) {
         projectService.delete(id);
         return ResponseEntity.noContent().build();
     }

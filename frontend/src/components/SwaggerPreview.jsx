@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import SwaggerUI from 'swagger-ui-react'
 import 'swagger-ui-react/swagger-ui.css'
 
-export default function SwaggerPreview({ spec }) {
+export default function SwaggerPreview({ spec, onSelectEndpoint }) {
   const [raw, setRaw] = useState('')
   const [tab, setTab] = useState('ui')
   const [loading, setLoading] = useState(false)
@@ -31,6 +31,20 @@ export default function SwaggerPreview({ spec }) {
     </div>
   )
 
+  // Delegate clicks inside swagger-ui: clicking an operation block selects
+  // the same endpoint in the editor (same as clicking the left panel list).
+  function handlePreviewClick(e) {
+    if (!onSelectEndpoint) return
+    const opblock = e.target.closest('.opblock')
+    if (!opblock) return
+    const methodEl = opblock.querySelector('.opblock-summary-method')
+    const pathEl = opblock.querySelector('.opblock-summary-path')
+    if (!methodEl || !pathEl) return
+    const method = methodEl.textContent.trim()
+    const path = pathEl.textContent.trim()
+    if (method && path) onSelectEndpoint(method, path)
+  }
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex border-b border-gray-200 mb-2">
@@ -48,9 +62,15 @@ export default function SwaggerPreview({ spec }) {
         </button>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto" onClickCapture={handlePreviewClick}>
         {tab === 'ui' ? (
           <div className="swagger-preview-wrapper">
+            {/* Hide the "Contact the developer" mailto link swagger-ui renders for info.contact.email */}
+            <style>{`
+              .swagger-preview-wrapper .swagger-ui .info a[href^="mailto:"] {
+                display: none;
+              }
+            `}</style>
             <SwaggerUI spec={spec} docExpansion="list" defaultModelsExpandDepth={-1} />
           </div>
         ) : (

@@ -20,6 +20,20 @@ export const getSpecYaml = (project) =>
     headers: { 'Content-Type': 'application/json' }
   }).then(r => r.data)
 
+// Raw text versions for file download (plain responseType, otherwise the
+// body arrives parsed and Blob serializes it as "[object Object]").
+export const getSpecJsonText = (project) =>
+  axios.post(`${BASE}/spec/json`, project, {
+    headers: { 'Content-Type': 'application/json' },
+    responseType: 'text'
+  }).then(r => r.data)
+
+export const getSpecYamlText = (project) =>
+  axios.post(`${BASE}/spec/yaml`, project, {
+    headers: { 'Content-Type': 'application/json' },
+    responseType: 'text'
+  }).then(r => r.data)
+
 // Import
 export const importFile = (file) => {
   const formData = new FormData()

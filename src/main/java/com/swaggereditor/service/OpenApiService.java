@@ -34,7 +34,9 @@ public class OpenApiService {
     public ProjectDTO parseSpec(String specContent) {
         OpenAPIV3Parser parser = new OpenAPIV3Parser();
         ParseOptions options = new ParseOptions();
-        options.setResolve(true);
+        // Resolve fully so that internal $ref schemas are inlined into DTOs;
+        // otherwise request/response bodies referencing components collapse to {}.
+        options.setResolveFully(true);
 
         SwaggerParseResult result = parser.readContents(specContent, null, options);
         if (result.getOpenAPI() == null) {
@@ -170,8 +172,8 @@ public class OpenApiService {
         if (endpoint.getDescription() != null) operation.setDescription(endpoint.getDescription());
         if (endpoint.getOperationId() != null) operation.setOperationId(endpoint.getOperationId());
         if (Boolean.TRUE.equals(endpoint.getDeprecated())) operation.setDeprecated(true);
-        if (endpoint.getTags() != null && !endpoint.getTags().isBlank()) {
-            operation.setTags(Arrays.asList(endpoint.getTags().split(",")));
+        if (endpoint.getTags() != null && !endpoint.getTags().isEmpty()) {
+            operation.setTags(endpoint.getTags());
         }
 
         if (endpoint.getParameters() != null && !endpoint.getParameters().isEmpty()) {
@@ -241,7 +243,7 @@ public class OpenApiService {
             endpoint.setOperationId(operation.getOperationId());
             endpoint.setDeprecated(Boolean.TRUE.equals(operation.getDeprecated()));
             if (operation.getTags() != null) {
-                endpoint.setTags(String.join(",", operation.getTags()));
+                endpoint.setTags(new ArrayList<>(operation.getTags()));
             }
 
             if (operation.getParameters() != null) {
@@ -350,6 +352,25 @@ public class OpenApiService {
         if (map.containsKey("format")) schema.setFormat((String) map.get("format"));
         if (map.containsKey("description")) schema.setDescription((String) map.get("description"));
         if (map.containsKey("example")) schema.setExample(map.get("example"));
+        if (map.containsKey("default")) schema.setDefault(map.get("default"));
+        if (map.containsKey("enum")) schema.setEnum((List) map.get("enum"));
+        if (map.containsKey("nullable")) schema.setNullable((Boolean) map.get("nullable"));
+        if (map.containsKey("minLength")) schema.setMinLength((Integer) map.get("minLength"));
+        if (map.containsKey("maxLength")) schema.setMaxLength((Integer) map.get("maxLength"));
+        if (map.containsKey("pattern")) schema.setPattern((String) map.get("pattern"));
+        if (map.containsKey("minItems")) schema.setMinItems((Integer) map.get("minItems"));
+        if (map.containsKey("maxItems")) schema.setMaxItems((Integer) map.get("maxItems"));
+        if (map.containsKey("additionalProperties")) {
+            Object ap = map.get("additionalProperties");
+            if (ap instanceof Boolean b) {
+                schema.setAdditionalProperties(b);
+            } else if (ap instanceof Map) {
+                schema.setAdditionalProperties(mapToSchema((Map<String, Object>) ap));
+            }
+        }
+        if (map.containsKey("oneOf")) schema.setOneOf(mapToSchemaList((List<Object>) map.get("oneOf")));
+        if (map.containsKey("anyOf")) schema.setAnyOf(mapToSchemaList((List<Object>) map.get("anyOf")));
+        if (map.containsKey("allOf")) schema.setAllOf(mapToSchemaList((List<Object>) map.get("allOf")));
         if (map.containsKey("properties")) {
             Map<String, Object> props = (Map<String, Object>) map.get("properties");
             Map<String, Schema> schemaProps = new LinkedHashMap<>();
@@ -367,6 +388,19 @@ public class OpenApiService {
         return schema;
     }
 
+    @SuppressWarnings("unchecked")
+    private List<Schema> mapToSchemaList(List<Object> list) {
+        List<Schema> result = new ArrayList<>();
+        if (list != null) {
+            for (Object o : list) {
+                if (o instanceof Map) {
+                    result.add(mapToSchema((Map<String, Object>) o));
+                }
+            }
+        }
+        return result;
+    }
+
     private String schemaToJsonString(Schema<?> schema) {
         try {
             return jsonMapper.writeValueAsString(schemaToMap(schema));
@@ -382,6 +416,31 @@ public class OpenApiService {
         if (schema.getFormat() != null) map.put("format", schema.getFormat());
         if (schema.getDescription() != null) map.put("description", schema.getDescription());
         if (schema.getExample() != null) map.put("example", schema.getExample());
+        if (schema.getDefault() != null) map.put("default", schema.getDefault());
+        if (schema.getEnum() != null && !schema.getEnum().isEmpty()) map.put("enum", schema.getEnum());
+        if (Boolean.TRUE.equals(schema.getNullable())) map.put("nullable", true);
+        if (schema.getMinLength() != null) map.put("minLength", schema.getMinLength());
+        if (schema.getMaxLength() != null) map.put("maxLength", schema.getMaxLength());
+        if (schema.getPattern() != null) map.put("pattern", schema.getPattern());
+        if (schema.getMinItems() != null) map.put("minItems", schema.getMinItems());
+        if (schema.getMaxItems() != null) map.put("maxItems", schema.getMaxItems());
+        if (schema.getAdditionalProperties() != null) {
+            Object ap = schema.getAdditionalProperties();
+            if (ap instanceof Schema) {
+                map.put("additionalProperties", schemaToMap((Schema<?>) ap));
+            } else {
+                map.put("additionalProperties", ap);
+            }
+        }
+        if (schema.getOneOf() != null && !schema.getOneOf().isEmpty()) {
+            map.put("oneOf", schema.getOneOf().stream().map(this::schemaToMap).toList());
+        }
+        if (schema.getAnyOf() != null && !schema.getAnyOf().isEmpty()) {
+            map.put("anyOf", schema.getAnyOf().stream().map(this::schemaToMap).toList());
+        }
+        if (schema.getAllOf() != null && !schema.getAllOf().isEmpty()) {
+            map.put("allOf", schema.getAllOf().stream().map(this::schemaToMap).toList());
+        }
         if (schema.getProperties() != null) {
             Map<String, Object> props = new LinkedHashMap<>();
             for (Map.Entry<String, Schema> entry : ((Map<String, Schema>) schema.getProperties()).entrySet()) {

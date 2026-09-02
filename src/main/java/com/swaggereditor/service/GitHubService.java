@@ -68,9 +68,13 @@ public class GitHubService {
         HttpEntity<?> entity = new HttpEntity<>(headers);
 
         try {
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            // Read bytes and decode as UTF-8 explicitly: RestTemplate's String converter
+            // falls back to ISO-8859-1 when the response has no charset, which corrupts
+            // non-ASCII text (e.g. Cyrillic summaries).
+            ResponseEntity<byte[]> response = restTemplate.exchange(url, HttpMethod.GET, entity, byte[].class);
             log.debug("GitHub raw {} -> {}", url, response.getStatusCode());
-            return response.getBody();
+            byte[] body = response.getBody();
+            return body != null ? new String(body, StandardCharsets.UTF_8) : null;
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
                 log.debug("GitHub raw 404 (expected): {} -> {}", url, e.getResponseBodyAsString());

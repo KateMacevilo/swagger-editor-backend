@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { getProject, updateProject, getSpecJson, getSpecYaml } from '../services/api'
+import { getProject, updateProject, getSpecJson, getSpecJsonText, getSpecYamlText } from '../services/api'
 import ParameterBuilder from '../components/ParameterBuilder'
 import ResponseBuilder from '../components/ResponseBuilder'
 import SchemaBuilder from '../components/SchemaBuilder'
@@ -19,7 +19,7 @@ const METHOD_COLORS = {
 
 const EMPTY_ENDPOINT = {
   path: '', method: 'GET', summary: '', description: '',
-  tags: '', operationId: '', deprecated: false,
+  tags: [], operationId: '', deprecated: false,
   requestBodySchema: '', requestBodyRequired: false,
   parameters: [], responses: []
 }
@@ -138,7 +138,7 @@ export default function EditorPage() {
 
   async function downloadJson() {
     if (!project) return
-    const blob = new Blob([await getSpecJson(project)], { type: 'application/json' })
+    const blob = new Blob([await getSpecJsonText(project)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -149,7 +149,7 @@ export default function EditorPage() {
 
   async function downloadYaml() {
     if (!project) return
-    const blob = new Blob([await getSpecYaml(project)], { type: 'application/x-yaml' })
+    const blob = new Blob([await getSpecYamlText(project)], { type: 'application/x-yaml' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -264,8 +264,8 @@ export default function EditorPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-gray-600 mb-1">Tags (через запятую)</label>
-                <input value={form.tags || ''}
-                  onChange={e => setForm({ ...form, tags: e.target.value })}
+                <input value={(form.tags || []).join(', ')}
+                  onChange={e => setForm({ ...form, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
                   placeholder="users, auth"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
@@ -357,7 +357,10 @@ export default function EditorPage() {
           {loadingSpec && <span className="text-xs text-gray-400">обновление...</span>}
         </div>
         <div className="flex-1 overflow-auto p-2">
-          <SwaggerPreview spec={spec} />
+          <SwaggerPreview spec={spec} onSelectEndpoint={(method, path) => {
+            const ep = project.endpoints?.find(e => e.method === method && e.path === path)
+            if (ep) selectEndpoint(ep)
+          }} />
         </div>
       </aside>
 

@@ -4,13 +4,15 @@
 
 Full-stack веб-приложение для визуального создания, редактирования и предпросмотра спецификаций **OpenAPI 3.0.0 (Swagger)**.
 
-- **Главная страница** — список проектов, создание нового проекта, импорт готового OpenAPI-файла (JSON/YAML).
+- **Главная страница** — список проектов из GitHub, создание нового проекта, импорт готового OpenAPI-файла (JSON/YAML).
 - **Редактор** — трёхпанельный интерфейс:
-  - **Левая панель** — список эндпоинтов проекта, кнопки экспорта JSON/YAML и сохранения на GitHub.
+  - **Левая панель** — список эндпоинтов проекта, кнопки экспорта JSON/YAML, сохранения на GitHub и редактирования мета-информации проекта.
   - **Центральная панель** — форма-конструктор эндпоинта: метод, путь, параметры, request body, ответы.
   - **Правая панель** — живой Swagger UI и сырой JSON сгенерированной спецификации.
 
 Проекты хранятся не в локальной базе данных, а в заданном GitHub-репозитории: каждый проект — это папка `{slug}/openapi.json`. Бэкенд читает, создаёт, обновляет и удаляет эти файлы через GitHub REST API.
+
+> **Важно:** файлы `README.md` и `CLAUDE.md` в корне устарели — они описывают H2/JPA-версию и API с подресурсами `/api/projects/{id}/endpoints`, которых в текущей кодовой базе нет. Доверяйте этому `AGENTS.md` и исходному коду.
 
 ---
 
@@ -26,12 +28,12 @@ Full-stack веб-приложение для визуального созда�
   - `io.swagger.core.v3:swagger-core:2.2.20` — сериализация в JSON/YAML.
   - `io.swagger.parser.v3:swagger-parser:2.1.21` — импорт существующих спецификаций.
 - **Jackson YAML** (`jackson-dataformat-yaml`).
-- **Lombok**.
-- **Maven** 3.9+ (в текущем окружении доступен и в `PATH`, и wrapper в `~/.m2/wrapper`).
+- **Lombok** (scope `provided`, исключён из fat-jar).
+- **Maven** 3.9.16 (доступен в `PATH` как `/opt/homebrew/bin/mvn`).
 
 ### Frontend
 
-- **React 18** + **React Router 6**.
+- **React 18** + **React Router 6.26**.
 - **Vite 5** (dev-сервер на порту 5173).
 - **Tailwind CSS 3** + **PostCSS/Autoprefixer**.
 - **swagger-ui-react 5** — встроенный Swagger UI.
@@ -46,12 +48,14 @@ Full-stack веб-приложение для визуального созда�
 /Users/katerinazaharenko/Documents/dkr-swagger/swagger-editor-backend/
 ├── pom.xml                              # Корневой Maven POM (backend)
 ├── Dockerfile                           # Контейнерный образ для k8s
+├── .env.example                         # Шаблон переменных окружения (не секреты в git)
 ├── src/main/java/com/swaggereditor/
 │   ├── SwaggerEditorApplication.java    # Точка входа Spring Boot
 │   ├── config/
 │   │   ├── CorsConfig.java              # CORS: разрешены :5173 и :3000
 │   │   ├── GitHubConfig.java            # RestTemplate bean + @EnableConfigurationProperties
-│   │   └── GitHubProperties.java        # github.* properties (record)
+│   │   ├── GitHubProperties.java        # github.* properties (Java record, branch default = main)
+│   │   └── SpaFallbackFilter.java       # Forward не-API путей в index.html (SPA)
 │   ├── controller/                      # REST-контроллеры
 │   │   ├── ProjectController.java       # CRUD проектов
 │   │   ├── SpecificationController.java # Генерация OpenAPI JSON/YAML из ProjectDTO
@@ -69,32 +73,40 @@ Full-stack веб-приложение для визуального созда�
 │       ├── OpenApiService.java          # Парсинг/сериализация OpenAPI ↔ DTO
 │       └── GitHubService.java           # Низкоуровневые операции с файлами GitHub
 ├── src/main/resources/
-│   └── application.properties           # Порт, multipart, GitHub-конфиг (без секретов)
+│   ├── application.properties           # Порт, multipart, GitHub-конфиг (без секретов)
+│   └── static/                          # Сюда копируется frontend/dist при production-сборке
 ├── src/test/java/com/swaggereditor/
 │   └── SwaggerEditorApplicationTests.java  # Smoke-тест загрузки контекста
 ├── chart/                               # Helm chart для Kubernetes
 │   ├── Chart.yaml
 │   ├── values.yaml
 │   └── templates/
-├── frontend/
-│   ├── package.json
-│   ├── vite.config.js                   # Прокси /api → localhost:8080
-│   ├── tailwind.config.js
-│   ├── postcss.config.js
-│   ├── index.html
-│   └── src/
-│       ├── App.jsx                      # Роутинг и навигация
-│       ├── main.jsx
-│       ├── index.css
-│       ├── services/api.js              # Все axios-запросы
-│       ├── pages/
-│       │   ├── HomePage.jsx             # Список проектов + создание/импорт
-│       │   └── EditorPage.jsx           # Трёхпанельный редактор
-│       └── components/
-│           ├── ParameterBuilder.jsx     # Query/Path/Header/Cookie параметры
-│           ├── ResponseBuilder.jsx      # HTTP-статусы и схемы ответов
-│           ├── SchemaBuilder.jsx        # Визуальный JSON Schema + Raw JSON
-│           └── SwaggerPreview.jsx       # swagger-ui-react + вкладка JSON
+│       ├── _helpers.tpl
+│       ├── configmap.yaml
+│       ├── secret.yaml
+│       ├── deployment.yaml
+│       ├── service.yaml
+│       ├── ingress.yaml
+│       └── hpa.yaml
+└── frontend/
+    ├── package.json
+    ├── vite.config.js                   # Прокси /api → localhost:8080
+    ├── tailwind.config.js
+    ├── postcss.config.js
+    ├── index.html
+    └── src/
+        ├── App.jsx                      # Роутинг и навигация
+        ├── main.jsx
+        ├── index.css
+        ├── services/api.js              # Все axios-запросы
+        ├── pages/
+        │   ├── HomePage.jsx             # Список проектов + создание/импорт
+        │   └── EditorPage.jsx           # Трёхпанельный редактор
+        └── components/
+            ├── ParameterBuilder.jsx     # Query/Path/Header/Cookie параметры
+            ├── ResponseBuilder.jsx      # HTTP-статусы и схемы ответов
+            ├── SchemaBuilder.jsx        # Визуальный JSON Schema + Raw JSON
+            └── SwaggerPreview.jsx       # swagger-ui-react + вкладка JSON
 ```
 
 ---
@@ -119,7 +131,7 @@ npm run dev
 
 Фронтенд стартует на **http://localhost:5173**.
 
-> В текущем окружении `mvn` доступен в `PATH` как `/opt/homebrew/bin/mvn` (Apache Maven 3.9.16). Если `mvn` недоступен, используйте wrapper: `/Users/katerinazaharenko/.m2/wrapper/dists/apache-maven-3.9.9-bin/4nf9hui3q3djbarqar9g711ggc/apache-maven-3.9.9/bin/mvn`.
+> `mvn` доступен в `PATH` как `/opt/homebrew/bin/mvn` (Apache Maven 3.9.16).
 
 ### Production-сборка (один JAR)
 
@@ -132,7 +144,7 @@ mvn -f pom.xml package -DskipTests
 java -jar target/swagger-editor-backend-1.0.0.jar
 ```
 
-Приложение будет доступно на **http://localhost:8080**.
+Приложение будет доступно на **http://localhost:8080**. Каталог `src/main/resources/static/` — это артефакт сборки (в git не закоммичен, но и не в `.gitignore`); перед сборкой JAR его нужно обновить командой выше.
 
 ### Сборка Docker-образа
 
@@ -145,6 +157,8 @@ mvn -f pom.xml package -DskipTests
 
 docker build -t swagger-editor-backend:1.0.0 .
 ```
+
+Базовый образ — `eclipse-temurin:17-jre`, приложение слушает порт 8080.
 
 ### Развёртывание в Kubernetes через Helm
 
@@ -204,7 +218,7 @@ helm install swagger-editor ./chart -f chart/values-local.yaml
 helm upgrade swagger-editor ./chart -f chart/values-local.yaml
 ```
 
-> `chart/values-local.yaml` добавлен в `.gitignore`, чтобы секреты и кластерные настройки не попали в git.
+> `chart/values-local.yaml` добавлен в `.gitignore`, чтобы секреты и кластерные настройки не попали в git. Шаблон `secret.yaml` обязателен: при пустом `githubToken` установка chart завершится ошибкой (`required`).
 
 ### Тесты
 
@@ -212,7 +226,7 @@ helm upgrade swagger-editor ./chart -f chart/values-local.yaml
 mvn -f pom.xml test
 ```
 
-Проверено: smoke-тест `SwaggerEditorApplicationTests.contextLoads()` проходит успешно. Специфичные тесты бизнес-логики и GitHub-операций в проекте не настроены. Фронтенд-тесты и линтеры не настроены.
+Проверено: smoke-тест `SwaggerEditorApplicationTests.contextLoads()` проходит успешно. Добавлен регрессионный `ImportRoundTripIT` — он парсит реальную open-banking-спецификацию из `src/main/resources/json-test/swagger.json` (~1 МБ, 34 пути, 471 схема) и проверяет: теги с запятыми не разрываются, `$ref`-тела раскрываются с сохранением примеров, ограничения схем (`minLength`/`maxLength`/`pattern`) и кириллица переживают round-trip. Специфичные тесты GitHub-операций не настроены. Фронтенд-тесты и линтеры не настроены.
 
 ---
 
@@ -240,21 +254,25 @@ mvn -f pom.xml test
 
 Бэкенд не использует базу данных. Каждый проект хранится в GitHub-репозитории как `{slug}/openapi.json`:
 
-- `ProjectService.findAll()` получает список директорий через `GET /repos/{owner}/{repo}/contents/` и для каждой читает `openapi.json`. Загрузка выполняется параллельно в пуле до 10 потоков.
-- `ProjectService.findById(id)` читает JSON по пути `{id}/openapi.json` и парсит его в `ProjectDTO`.
+- `ProjectService.findAll()` получает список директорий через `GET /repos/{owner}/{repo}/contents/` и для каждой читает `openapi.json`. Загрузка выполняется параллельно в пуле до 10 потоков, результат сортируется по названию (без учёта регистра). Проекты, которые не удалось прочитать, молча пропускаются с предупреждением в лог.
+- `ProjectService.findById(id)` читает JSON по пути `{id}/openapi.json` и парсит его в `ProjectDTO`; 404 превращается в `NoSuchElementException` → HTTP 404.
 - `ProjectService.create(dto)` генерирует slug из названия, сериализует DTO в JSON и создаёт файл в GitHub.
 - `ProjectService.update(id, dto)` сериализует `ProjectDTO` в JSON и обновляет файл в GitHub.
 - `ProjectService.importSpec(content)` парсит стороннюю спецификацию и сразу коммитит результат в новую директорию.
 
-Путь в репозитории и `sha` последнего коммита не сохраняются в БД (её нет), а вычисляются/запрашиваются у GitHub при каждой операции.
+`GitHubService` работает напрямую с REST API: запись/удаление — через `PUT`/`DELETE /repos/{owner}/{repo}/contents/{path}` (sha существующего файла запрашивается отдельно), чтение — через CDN `raw.githubusercontent.com`. Путь в репозитории и `sha` последнего коммита не сохраняются в БД (её нет), а вычисляются/запрашиваются у GitHub при каждой операции.
 
 ### Хранение схем
 
-Request body и response body хранятся как **JSON-строки** внутри DTO (`requestBodySchema`, `bodySchema`). `OpenApiService` преобразует их в `io.swagger.v3.oas.models.media.Schema` через `ObjectMapper`.
+Request body и response body хранятся как **JSON-строки** внутри DTO (`requestBodySchema`, `bodySchema`). `OpenApiService` преобразует их в `io.swagger.v3.oas.models.media.Schema` через `ObjectMapper` (`mapToSchema` / `schemaToMap`), поддерживаются типы `string`, `integer`, `number`, `boolean`, `array`, `object`, поля `format`, `description`, `example`, `default`, `enum`, `nullable`, `minLength`, `maxLength`, `pattern`, `minItems`, `maxItems`, `additionalProperties`, `oneOf`/`anyOf`/`allOf`, `properties`, `required`. Request body добавляется только для методов POST/PUT/PATCH и только с media type `application/json`; при парсинге сохраняется первый сервер из `servers` и только тело под `application/json`.
+
+### Tags эндпоинтов
+
+В `EndpointDTO` tags хранятся как `List<String>` — **не** как строка через запятую: тег может сам содержать запятые (например, «Создание, получение и отзыв платежа ...»), и join/split по `,` разрывал бы его на фрагменты. Фронтенд показывает список в input через `join(', ')` и разбивает введённое значение обратно.
 
 ### Генерация OpenAPI
 
-`OpenApiService.toJson(projectDTO)` / `toYaml(projectDTO)` собирают объект `OpenAPI` из `swagger-models` и сериализуют через `io.swagger.v3.core.util.Json` / `Yaml`. Парсинг выполняет `OpenAPIV3Parser` из `swagger-parser` с включённым `resolve(true)`.
+`OpenApiService.toJson(projectDTO)` / `toYaml(projectDTO)` собирают объект `OpenAPI` из `swagger-models` (версия спецификации фиксирована — `3.0.0`) и сериализуют через `io.swagger.v3.core.util.Json` / `Yaml`. Если у эндпоинта нет ответов, добавляется дефолтный `200 OK`. Парсинг выполняет `OpenAPIV3Parser` из `swagger-parser` с включённым `resolveFully(true)` — внутренние `$ref` на `components.schemas` раскрываются inline, иначе тела запросов/ответов, ссылающиеся на компоненты, превращались бы в `{}`; поддерживаются 7 HTTP-методов: GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD. Чтение файлов из GitHub выполняется явно в UTF-8, иначе RestTemplate при отсутствии charset в ответе декодировал бы их в ISO-8859-1 и портил кириллицу.
 
 ### Обновление превью
 
@@ -262,11 +280,15 @@ Request body и response body хранятся как **JSON-строки** вн
 
 ### Идентификатор проекта
 
-Идентификатором проекта служит имя папки в репозитории (slug от названия), которое формируется в `OpenApiService.toSlug()`: нижний регистр, неалфавитно-цифровые символы заменяются на `-`, крайние дефисы удаляются. Пустое название превращается в `untitled-project`.
+Идентификатором проекта служит имя папки в репозитории (slug от названия), которое формируется в `OpenApiService.toSlug()`: нижний регистр, неалфавитно-цифровые символы заменяются на `-`, крайние дефисы удаляются. Пустое/blank название превращается в `untitled-project`, а пустой результат очистки — в `project`.
 
 ### CORS и прокси
 
-В dev-режиме фронтенд ходит на `/api/*`, которые Vite проксирует на `localhost:8080`. Дополнительно `CorsConfig` разрешает запросы с `http://localhost:5173` и `http://localhost:3000`.
+В dev-режиме фронтенд ходит на `/api/*`, которые Vite проксирует на `localhost:8080`. Дополнительно `CorsConfig` разрешает запросы с `http://localhost:5173` и `http://localhost:3000` к `/api/**`.
+
+### Раздача UI в production
+
+В production-сборке фронтенд (`frontend/dist`) копируется в `src/main/resources/static/` и раздаётся Spring Boot из того же JAR, что и backend. API остаётся на `/api/**`. Чтобы client-side роутинг React Router работал при обновлении страницы или прямом заходе по ссылке (например, `/editor/my-project`), `SpaFallbackFilter` перенаправляет все GET-запросы, не начинающиеся с `/api/` и `/assets/`, на `index.html`.
 
 ---
 
@@ -287,16 +309,16 @@ github.branch=${GITHUB_BRANCH:main}
 ```
 
 - `github.token` — Personal Access Token с правами на чтение и запись содержимого репозитория. **Не хранится в `application.properties`**; передаётся через переменную окружения `GITHUB_TOKEN` или Kubernetes Secret.
-- `github.owner` и `github.repo` — короткие имена (`KateMacevilo/swagger-editor-backend`), не полный URL. Можно переопределить через `GITHUB_OWNER`/`GITHUB_REPO`.
+- `github.owner` и `github.repo` — короткие имена (`KateMacevilo/swagger-editor-backend`), не полный URL. Можно переопределить через `GITHUB_OWNER`/`GITHUB_REPO`. `GitHubService` всё равно подчищает случайные префиксы `https://github.com/` и суффикс `.git`.
 - `github.branch` — целевая ветка, по умолчанию `main`. Переопределяется через `GITHUB_BRANCH`.
 
-> См. `.env.example` для локального запуска и `chart/values.yaml` для Kubernetes.
+> См. `.env.example` для локального запуска и `chart/values.yaml` для Kubernetes. Helm-шаблон `configmap.yaml` пробрасывает `GITHUB_OWNER`/`GITHUB_REPO`/`GITHUB_BRANCH`, `secret.yaml` — `GITHUB_TOKEN`, причём `githubToken` обязателен.
 
 ---
 
 ## Инструкции по тестированию
 
-- **Backend**: единственный тест — `SwaggerEditorApplicationTests.contextLoads()`. Он проверяет, что Spring-контекст загружается.
+- **Backend**: тесты `SwaggerEditorApplicationTests` (загрузка контекста) и `ImportRoundTripIT` (импорт реальной open-banking-спецификации из `src/main/resources/json-test/swagger.json`).
 - **Frontend**: тесты, линтеры и форматтеры не настроены.
 - **Ручное тестирование**: убедитесь, что `github.token`, `github.owner` и `github.repo` заданы, иначе любой запрос к `/api/projects` вернёт `503 Service Unavailable` с сообщением `GitHub integration is not configured`.
 
@@ -308,9 +330,10 @@ github.branch=${GITHUB_BRANCH:main}
   - Lombok `@Data` / `@RequiredArgsConstructor` для DTO и сервисов.
   - `jakarta.validation.constraints.NotBlank` на обязательных полях DTO.
   - Контроллеры возвращают DTO напрямую или `ResponseEntity<T>`.
-  - Глобальная обработка ошибок в `GlobalExceptionHandler`.
+  - Глобальная обработка ошибок в `GlobalExceptionHandler` (`@RestControllerAdvice`): `NoSuchElementException` → 404, `IllegalArgumentException` → 400, `IllegalStateException` → 503, `HttpClientErrorException` → статус GitHub, остальное → 500.
   - Java-записи используются только для `GitHubProperties`.
-  - Логирование через SLF4J (`LoggerFactory.getLogger(...)`).
+  - Логирование через SLF4J (`LoggerFactory.getLogger(...)`), логи на английском.
+  - Комментарии и Javadoc в коде — на английском; UI и сообщения пользователю — на русском.
 
 - **Frontend**:
   - Функциональные компоненты React, хуки (`useState`, `useEffect`, `useRef`, `useCallback`).
@@ -334,6 +357,8 @@ github.branch=${GITHUB_BRANCH:main}
 
 1. **`README.md` и `CLAUDE.md` устарели**: они описывают H2-базу данных, JPA-сущности и API-эндпоинты вроде `/api/projects/{id}/endpoints`, которых в коде нет. Доверяйте `AGENTS.md` и исходному коду.
 2. **Нет базы данных**: несмотря на упоминание JPA/H2 в старой документации, в `pom.xml` нет `spring-boot-starter-data-jpa` и H2. Все данные живут в GitHub.
-3. **Frontend-сборка**: `npm run build` завершается успешно, но выдаёт предупреждение о размере JS-чанка (>500 kB). Это косметическое, функциональность не нарушается.
+3. **Frontend-сборка**: `npm run build` завершается успешно, но выдаёт предупреждение о размере JS-чанка (>500 kB, в основном из-за swagger-ui). Это косметическое, функциональность не нарушается.
 4. **Сохранение на GitHub** требует валидного PAT и прав на репозиторий. При ошибках GitHub фронтенд показывает текст ошибки под кнопкой «Сохранить на GitHub».
 5. **Slug как ID**: после создания проекта изменить его идентификатор (имя папки) через UI нельзя — только путём переименования файла в GitHub.
+6. **Потеря данных при переименовании**: при `PUT /api/projects/{id}` список эндпоинтов перезаписывается целиком; отдельной стратегии merge нет.
+7. **Поля `ProjectDTO`** `createdAt`/`updatedAt`/`githubLastCommitSha`/`githubLastPublishedAt` в DTO есть, но бэкенд их не заполняет при чтении из GitHub — рассчитывать на них в UI не стоит.

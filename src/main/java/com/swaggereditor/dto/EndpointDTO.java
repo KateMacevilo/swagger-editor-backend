@@ -18,7 +18,8 @@ public class EndpointDTO {
 
     private String summary;
     private String description;
-    private String tags;
+    /** Tag names as a list. A single tag may itself contain commas, so joining/splitting on "," would corrupt it. */
+    private List<String> tags;
     private String operationId;
     private Boolean deprecated = false;
 

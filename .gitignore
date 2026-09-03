@@ -36,3 +36,7 @@ chart/values-local.yaml
 chart/values-override.yaml
 chart/*/values-local.yaml
 chart/*/values-override.yaml
+
+# Docker image export for offline transfer
+swagger-editor-image.tar.gz
+*.tar.gz

@@ -1,193 +1,132 @@
 # OpenAPI Visual Editor
 
-Веб-приложение для визуального создания, редактирования и просмотра спецификаций **OpenAPI 3.0.0 (Swagger)**.
+Full-stack веб-приложение для визуального создания, редактирования и предпросмотра спецификаций **OpenAPI 3.0.0 (Swagger)**.
 
-- **Левая панель** — список эндпоинтов и форма-конструктор
-- **Правая панель** — живой Swagger UI или JSON-код спецификации, обновляется после каждого сохранения
-- Экспорт готовой спецификации в **JSON** или **YAML**
-- Импорт существующего OpenAPI-файла для редактирования
+- **Главная страница** — список проектов, создание нового проекта, импорт готового OpenAPI-файла (JSON/YAML).
+- **Редактор** — трёхпанельный интерфейс:
+  - слева — список эндпоинтов, экспорт JSON/YAML, сохранение на GitHub;
+  - в центре — форма-конструктор эндпоинта (метод, путь, параметры, request body, ответы);
+  - справа — живой Swagger UI и сырой JSON спецификации (клик по эндпоинту в превью открывает его в редакторе).
 
----
+Проекты хранятся **не в локальной базе**, а в заданном GitHub-репозитории: каждый проект — папка `{slug}/openapi.json`. Бэкенд работает с ними через GitHub REST API.
 
-## Требования
-
-| Инструмент  | Версия       |
-|-------------|--------------|
-| Java        | 17 или новее |
-| Maven       | 3.8+         |
-| Node.js     | 18 или новее |
-| npm         | 9+           |
+> Полная техническая документация для разработчиков — в [AGENTS.md](AGENTS.md).
 
 ---
 
-## Быстрый старт (dev-режим)
+## Конфигурация
 
-### 1. Запуск бэкенда
+Приложению нужен GitHub Personal Access Token с правами на чтение/запись содержимого репозитория.
+
+| Переменная окружения | Назначение | По умолчанию |
+|---|---|---|
+| `GITHUB_TOKEN` | **Обязательно.** PAT для GitHub API | — |
+| `GITHUB_OWNER` | Владелец репозитория | `KateMacevilo` |
+| `GITHUB_REPO` | Имя репозитория | `swagger-editor-backend` |
+| `GITHUB_BRANCH` | Целевая ветка | `main` |
+
+Локально для dev-режима удобно использовать `.env` (шаблон — `.env.example`).
+
+---
+
+## Запуск
+
+### Вариант 1. Docker (рекомендуется)
+
+Нужен готовый JAR (`mvn package -DskipTests` после `npm run build` и копирования `frontend/dist/*` в `src/main/resources/static/`):
 
 ```bash
-# Из корня проекта (где лежит pom.xml)
-mvn spring-boot:run
+docker build -t swagger-editor-backend:1.0.0 .
+docker run -d --name swagger-editor -p 8080:8080 \
+  -e GITHUB_TOKEN=<токен> -e GITHUB_OWNER=<owner> -e GITHUB_REPO=<repo> \
+  swagger-editor-backend:1.0.0
 ```
 
-Бэкенд стартует на **http://localhost:8080**.
+Приложение: **http://localhost:8080**.
 
-Первый запуск скачает зависимости Maven (~2–3 минуты).
-
-### 2. Запуск фронтенда
-
-В **отдельном** терминале:
+Если на машине нет Node/Maven/JDK, образ можно собрать целиком в Docker (stages: node → maven → jre):
 
 ```bash
+docker build -f Dockerfile.full -t swagger-editor-backend:1.0.0 .
+```
+
+### Вариант 2. Локально (dev-режим, два терминала)
+
+```bash
+# 1. Backend
+mvn spring-boot:run          # http://localhost:8080
+
+# 2. Frontend
 cd frontend
-npm install      # только при первом запуске
-npm run dev
+npm install                  # только при первом запуске
+npm run dev                  # http://localhost:5173
 ```
 
-Фронтенд стартует на **http://localhost:5173** — откройте эту страницу в браузере.
+В dev-режиме Vite проксирует `/api` на `localhost:8080`.
 
----
-
-## Работа с приложением
-
-### Главная страница — список проектов
-
-- Нажмите **«+ Новый проект»** — введите название, версию, URL сервера.
-- Нажмите **«Импортировать JSON/YAML»** — загрузите готовый файл OpenAPI 3.0, он автоматически разберётся и откроется в редакторе.
-- Клик по карточке проекта открывает редактор.
-- Крестик в правом верхнем углу карточки — удаление проекта.
-
-### Редактор — трёхпанельный интерфейс
-
-```
-[ Список эндпоинтов ] [ Форма редактирования ] [ Swagger UI preview ]
-```
-
-**Левая колонка:**
-- Список всех эндпоинтов проекта с цветными метками метода (GET/POST/PUT/...).
-- Кнопка **«+ Новый эндпоинт»**.
-- Кнопки **«JSON»** и **«YAML»** для скачивания готовой спецификации.
-- Кнопка ✏️ — редактирование мета-информации проекта (title, version, server URL и т.д.).
-
-**Центральная колонка — форма эндпоинта:**
-
-1. Выберите **HTTP-метод** и введите **путь** (`/api/users/{id}`)
-2. Заполните `Summary`, `Tags`, `Description`, `Operation ID`
-3. Вкладка **Параметры** — добавляйте Query / Path / Header / Cookie параметры:
-   - Имя, расположение (`in`), тип, формат, флаг `required`, описание, пример
-4. Вкладка **Request Body** — доступна для POST/PUT/PATCH:
-   - Визуальный конструктор полей с типами и вложенностью
-   - Переключатель на Raw JSON для прямого ввода JSON Schema
-5. Вкладка **Ответы** — добавляйте HTTP-статусы (200, 201, 400 и др.):
-   - Каждому статусу — описание и схема тела ответа
-6. Нажмите **«Сохранить»** — правая панель обновит предпросмотр.
-
-**Правая колонка — предпросмотр:**
-- Вкладка **Swagger UI** — интерактивный Swagger UI с развёрнутыми эндпоинтами
-- Вкладка **JSON** — сырой JSON сгенерированной спецификации
-
----
-
-## Экспорт спецификации
-
-В левой панели редактора:
-
-```
-[ JSON ]   →  скачивает openapi.json
-[ YAML ]   →  скачивает openapi.yaml
-```
-
-Файлы готовы к использованию в любом инструменте, поддерживающем OpenAPI 3.0 (Postman, Insomnia, AWS API Gateway, и т.д.).
-
----
-
-## Импорт существующей спецификации
-
-На главной странице нажмите **«Импортировать JSON/YAML»** и выберите файл.
-
-Парсер принимает любую валидную спецификацию OpenAPI 3.0 — создаёт проект и заполняет все эндпоинты, параметры и схемы.
-
----
-
-## H2 база данных (отладка)
-
-Данные хранятся **в памяти** и сбрасываются при перезапуске бэкенда.
-
-Веб-интерфейс H2 консоли: **http://localhost:8080/h2-console**
-
-| Поле      | Значение                |
-|-----------|-------------------------|
-| JDBC URL  | `jdbc:h2:mem:swaggerdb` |
-| User Name | `sa`                    |
-| Password  | _(пусто)_               |
-
-Чтобы данные сохранялись между перезапусками, измените `src/main/resources/application.properties`:
-
-```properties
-spring.datasource.url=jdbc:h2:file:./data/swaggerdb
-spring.jpa.hibernate.ddl-auto=update
-```
-
----
-
-## Production сборка (один JAR)
+### Вариант 3. Локально (production, один JAR)
 
 ```bash
-# 1. Собрать фронтенд
-cd frontend
-npm run build
-
-# 2. Скопировать dist в static-ресурсы Spring Boot
-cp -r dist/* ../src/main/resources/static/
-
-# 3. Собрать JAR
-cd ..
+cd frontend && npm run build && cp -r dist/* ../src/main/resources/static/ && cd ..
 mvn package -DskipTests
-
-# 4. Запустить
 java -jar target/swagger-editor-backend-1.0.0.jar
 ```
 
-Приложение будет доступно на **http://localhost:8080**.
+---
+
+## Перенос на другой компьютер без интернета (offline)
+
+Если на целевой машине нет доступа в интернет (нельзя скачать зависимости npm/maven или образы Docker), переносится **готовый образ**:
+
+```bash
+# На машине с Docker (здесь). ВАЖНО: под Windows нужен linux/amd64!
+docker build --platform linux/amd64 -t swagger-editor-backend:1.0.0-amd64 .
+docker save swagger-editor-backend:1.0.0-amd64 | gzip > swagger-editor-image.tar.gz
+```
+
+Перенести `swagger-editor-image.tar.gz` на целевую машину (флешка/локальная сеть), затем там:
+
+```powershell
+docker load -i swagger-editor-image.tar.gz
+
+docker run -d --name swagger-editor -p 8080:8080 `
+  -e GITHUB_TOKEN=<токен> -e GITHUB_OWNER=<owner> -e GITHUB_REPO=<repo> `
+  swagger-editor-backend:1.0.0-amd64
+```
+
+Нюансы:
+
+- На целевой машине нужен только Docker (при его отсутствии — перенести офлайн-инсталлятор Docker Desktop).
+- Образ должен быть собран под архитектуру целевой машины (`linux/amd64` для обычных Windows/Linux, `linux/arm64` для Mac на Apple Silicon).
+- При работе приложению нужен доступ к `api.github.com` — без него проекты не загрузятся.
+- Обновление кода на offline-машине: правки здесь → пересборка образа → повторный `docker save` → перенос.
+
+---
+
+## Развёртывание в Kubernetes
+
+Helm chart — в каталоге [`chart/`](chart/values.yaml). Установка (секреты — в `chart/values-local.yaml`, он в `.gitignore`):
+
+```bash
+helm install swagger-editor ./chart -f chart/values-local.yaml
+```
+
+Детали — в [AGENTS.md](AGENTS.md).
+
+---
+
+## Тесты
+
+```bash
+mvn test
+```
+
+Smoke-тест загрузки контекста + регрессионный `ImportRoundTripTest` на реальной open-banking-спецификации (`src/main/resources/json-test/swagger.json`, ~1 МБ).
 
 ---
 
 ## Технологии
 
-**Backend**
-- Java 17, Spring Boot 3.2.3
-- Spring Data JPA + H2
-- `io.swagger.core.v3:swagger-models` — объектная модель OpenAPI 3.0
-- `io.swagger.parser.v3:swagger-parser` — парсинг и импорт спецификаций
-- Lombok
+**Backend:** Java 17, Spring Boot 3.2.3, GitHub REST API, swagger-models / swagger-core / swagger-parser, Jackson YAML, Lombok, Maven.
 
-**Frontend**
-- React 18, React Router 6
-- Vite 5
-- Tailwind CSS 3
-- `swagger-ui-react` — встроенный Swagger UI
-- Axios
-
----
-
-## Структура API (backend)
-
-```
-GET    /api/projects                          — список проектов
-POST   /api/projects                          — создать проект
-GET    /api/projects/{id}                     — получить проект
-PUT    /api/projects/{id}                     — обновить проект
-DELETE /api/projects/{id}                     — удалить проект
-
-GET    /api/projects/{id}/endpoints           — список эндпоинтов
-POST   /api/projects/{id}/endpoints           — создать эндпоинт
-GET    /api/projects/{id}/endpoints/{eid}     — получить эндпоинт
-PUT    /api/projects/{id}/endpoints/{eid}     — обновить эндпоинт
-DELETE /api/projects/{id}/endpoints/{eid}     — удалить эндпоинт
-
-GET    /api/projects/{id}/spec                — спецификация JSON (для превью)
-GET    /api/projects/{id}/spec/download/json  — скачать openapi.json
-GET    /api/projects/{id}/spec/download/yaml  — скачать openapi.yaml
-
-POST   /api/import/file                       — импорт файла (multipart)
-POST   /api/import/text                       — импорт из строки
-```
+**Frontend:** React 18, React Router 6, Vite 5, Tailwind CSS 3, swagger-ui-react, Axios.

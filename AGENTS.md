@@ -12,7 +12,7 @@ Full-stack веб-приложение для визуального созда�
 
 Проекты хранятся не в локальной базе данных, а в заданном GitHub-репозитории: каждый проект — это папка `{slug}/openapi.json`. Бэкенд читает, создаёт, обновляет и удаляет эти файлы через GitHub REST API.
 
-> **Важно:** файлы `README.md` и `CLAUDE.md` в корне устарели — они описывают H2/JPA-версию и API с подресурсами `/api/projects/{id}/endpoints`, которых в текущей кодовой базе нет. Доверяйте этому `AGENTS.md` и исходному коду.
+> **Важно:** файл `CLAUDE.md` в корне устарел — он описывает H2/JPA-версию и API с подресурсами `/api/projects/{id}/endpoints`, которых в текущей кодовой базе нет. `README.md` актуален. Доверяйте этому `AGENTS.md` и исходному коду.
 
 ---
 
@@ -34,7 +34,7 @@ Full-stack веб-приложение для визуального созда�
 ### Frontend
 
 - **React 18** + **React Router 6.26**.
-- **Vite 5** (dev-сервер на порту 5173).
+- **Vite 5** (dev-сервер на порту 5173, прокси `/api` → `localhost:8080`).
 - **Tailwind CSS 3** + **PostCSS/Autoprefixer**.
 - **swagger-ui-react 5** — встроенный Swagger UI.
 - **Axios** — HTTP-клиент.
@@ -47,7 +47,9 @@ Full-stack веб-приложение для визуального созда�
 ```
 /Users/katerinazaharenko/Documents/dkr-swagger/swagger-editor-backend/
 ├── pom.xml                              # Корневой Maven POM (backend)
-├── Dockerfile                           # Контейнерный образ для k8s
+├── Dockerfile                           # Контейнерный образ для k8s (eclipse-temurin:17-jre)
+├── Dockerfile.full                      # Multi-stage: собирает frontend+backend внутри Docker
+├── .dockerignore                        # Исключения из контекста сборки образа
 ├── .env.example                         # Шаблон переменных окружения (не секреты в git)
 ├── src/main/java/com/swaggereditor/
 │   ├── SwaggerEditorApplication.java    # Точка входа Spring Boot
@@ -57,9 +59,9 @@ Full-stack веб-приложение для визуального созда�
 │   │   ├── GitHubProperties.java        # github.* properties (Java record, branch default = main)
 │   │   └── SpaFallbackFilter.java       # Forward не-API путей в index.html (SPA)
 │   ├── controller/                      # REST-контроллеры
-│   │   ├── ProjectController.java       # CRUD проектов
-│   │   ├── SpecificationController.java # Генерация OpenAPI JSON/YAML из ProjectDTO
-│   │   ├── ImportController.java        # Импорт файла/текста
+│   │   ├── ProjectController.java       # CRUD проектов (/api/projects)
+│   │   ├── SpecificationController.java # Генерация OpenAPI JSON/YAML из ProjectDTO (/api/spec)
+│   │   ├── ImportController.java        # Импорт файла/текста (/api/import)
 │   │   └── GlobalExceptionHandler.java  # Единообразные ошибки
 │   ├── dto/                             # Request/response DTO (Lombok @Data, jakarta.validation)
 │   │   ├── ProjectDTO.java
@@ -73,10 +75,13 @@ Full-stack веб-приложение для визуального созда�
 │       ├── OpenApiService.java          # Парсинг/сериализация OpenAPI ↔ DTO
 │       └── GitHubService.java           # Низкоуровневые операции с файлами GitHub
 ├── src/main/resources/
-│   ├── application.properties           # Порт, multipart, GitHub-конфиг (без секретов)
+│   ├── application.properties           # Порт, multipart, GitHub-конфиг
+│   ├── json-test/swagger.json           # Фикстура open-banking-спецификации для регрессионного теста (~1 МБ)
+│   ├── scrins/                          # Скриншоты (не код, не используются приложением)
 │   └── static/                          # Сюда копируется frontend/dist при production-сборке
 ├── src/test/java/com/swaggereditor/
-│   └── SwaggerEditorApplicationTests.java  # Smoke-тест загрузки контекста
+│   ├── SwaggerEditorApplicationTests.java  # Smoke-тест загрузки контекста
+│   └── ImportRoundTripTest.java            # Регрессионный round-trip импорта реальной спецификации
 ├── chart/                               # Helm chart для Kubernetes
 │   ├── Chart.yaml
 │   ├── values.yaml
@@ -158,7 +163,21 @@ mvn -f pom.xml package -DskipTests
 docker build -t swagger-editor-backend:1.0.0 .
 ```
 
-Базовый образ — `eclipse-temurin:17-jre`, приложение слушает порт 8080.
+Базовый образ — `eclipse-temurin:17-jre`, приложение слушает порт 8080. Dockerfile копирует готовый `target/swagger-editor-backend-1.0.0.jar` и сам ничего не собирает — JAR нужен заранее.
+
+### Сборка целиком в Docker (без локальных Node/Maven/JDK)
+
+`Dockerfile.full` — multi-stage: frontend собирается в стадии `node`, JAR — в стадии `maven`, в финальный образ копируется только JAR. Полезен на машинах, где не установлены npm/mvn (например, Windows без настроенного окружения):
+
+```bash
+docker build -f Dockerfile.full -t swagger-editor-backend:1.0.0 .
+
+docker run -d --name swagger-editor -p 8080:8080 \
+  -e GITHUB_TOKEN=<PAT> -e GITHUB_OWNER=<owner> -e GITHUB_REPO=<repo> \
+  swagger-editor-backend:1.0.0
+```
+
+Цикл «правка кода → сборка → запуск» на такой машине: редактируешь исходники, затем `docker build -f Dockerfile.full ...` и пересоздаёшь контейнер. Нужны только Docker и интернет (для зависимостей npm/maven).
 
 ### Развёртывание в Kubernetes через Helm
 
@@ -226,7 +245,7 @@ helm upgrade swagger-editor ./chart -f chart/values-local.yaml
 mvn -f pom.xml test
 ```
 
-Проверено: smoke-тест `SwaggerEditorApplicationTests.contextLoads()` проходит успешно. Добавлен регрессионный `ImportRoundTripIT` — он парсит реальную open-banking-спецификацию из `src/main/resources/json-test/swagger.json` (~1 МБ, 34 пути, 471 схема) и проверяет: теги с запятыми не разрываются, `$ref`-тела раскрываются с сохранением примеров, ограничения схем (`minLength`/`maxLength`/`pattern`) и кириллица переживают round-trip. Специфичные тесты GitHub-операций не настроены. Фронтенд-тесты и линтеры не настроены.
+Проверено: smoke-тест `SwaggerEditorApplicationTests.contextLoads()` проходит успешно. Добавлен регрессионный `ImportRoundTripTest` — он парсит реальную open-banking-спецификацию из `src/main/resources/json-test/swagger.json` (~1 МБ, 34 пути, 471 схема в компонентах; после разворачивания методов — 42 эндпоинта) и проверяет: теги с запятыми не разрываются, `$ref`-тела раскрываются с сохранением примеров, все эндпоинты имеют summary. Специфичные тесты GitHub-операций не настроены. Фронтенд-тесты и линтеры не настроены.
 
 ---
 
@@ -256,11 +275,11 @@ mvn -f pom.xml test
 
 - `ProjectService.findAll()` получает список директорий через `GET /repos/{owner}/{repo}/contents/` и для каждой читает `openapi.json`. Загрузка выполняется параллельно в пуле до 10 потоков, результат сортируется по названию (без учёта регистра). Проекты, которые не удалось прочитать, молча пропускаются с предупреждением в лог.
 - `ProjectService.findById(id)` читает JSON по пути `{id}/openapi.json` и парсит его в `ProjectDTO`; 404 превращается в `NoSuchElementException` → HTTP 404.
-- `ProjectService.create(dto)` генерирует slug из названия, сериализует DTO в JSON и создаёт файл в GitHub.
+- `ProjectService.create(dto)` генерирует slug из названия, сериализует DTO в JSON и создаёт файл в GitHub. Пустая версия заменяется на `1.0.0`.
 - `ProjectService.update(id, dto)` сериализует `ProjectDTO` в JSON и обновляет файл в GitHub.
 - `ProjectService.importSpec(content)` парсит стороннюю спецификацию и сразу коммитит результат в новую директорию.
 
-`GitHubService` работает напрямую с REST API: запись/удаление — через `PUT`/`DELETE /repos/{owner}/{repo}/contents/{path}` (sha существующего файла запрашивается отдельно), чтение — через CDN `raw.githubusercontent.com`. Путь в репозитории и `sha` последнего коммита не сохраняются в БД (её нет), а вычисляются/запрашиваются у GitHub при каждой операции.
+`GitHubService` работает напрямую с REST API: запись/удаление — через `PUT`/`DELETE /repos/{owner}/{repo}/contents/{path}` (sha существующего файла запрашивается отдельно), чтение — через CDN `raw.githubusercontent.com`. Путь в репозитории и `sha` последнего коммита не сохраняются в БД (её нет), а вычисляются/запрашиваются у GitHub при каждой операции. Если токен, owner или repo не заданы, `GitHubService` бросает `IllegalStateException("GitHub integration is not configured...")` → HTTP 503.
 
 ### Хранение схем
 
@@ -308,7 +327,7 @@ github.repo=${GITHUB_REPO:swagger-editor-backend}
 github.branch=${GITHUB_BRANCH:main}
 ```
 
-- `github.token` — Personal Access Token с правами на чтение и запись содержимого репозитория. **Не хранится в `application.properties`**; передаётся через переменную окружения `GITHUB_TOKEN` или Kubernetes Secret.
+- `github.token` — Personal Access Token с правами на чтение и запись содержимого репозитория. Штатно передаётся через переменную окружения `GITHUB_TOKEN` или Kubernetes Secret (см. раздел «Соображения безопасности» — в файле есть отклонение от этого правила).
 - `github.owner` и `github.repo` — короткие имена (`KateMacevilo/swagger-editor-backend`), не полный URL. Можно переопределить через `GITHUB_OWNER`/`GITHUB_REPO`. `GitHubService` всё равно подчищает случайные префиксы `https://github.com/` и суффикс `.git`.
 - `github.branch` — целевая ветка, по умолчанию `main`. Переопределяется через `GITHUB_BRANCH`.
 
@@ -318,7 +337,7 @@ github.branch=${GITHUB_BRANCH:main}
 
 ## Инструкции по тестированию
 
-- **Backend**: тесты `SwaggerEditorApplicationTests` (загрузка контекста) и `ImportRoundTripIT` (импорт реальной open-banking-спецификации из `src/main/resources/json-test/swagger.json`).
+- **Backend**: тесты `SwaggerEditorApplicationTests` (загрузка контекста) и `ImportRoundTripTest` (импорт реальной open-banking-спецификации из `src/main/resources/json-test/swagger.json`: 34 пути / 42 эндпоинта после разворачивания методов, теги с запятыми, `$ref`-тела, summary).
 - **Frontend**: тесты, линтеры и форматтеры не настроены.
 - **Ручное тестирование**: убедитесь, что `github.token`, `github.owner` и `github.repo` заданы, иначе любой запрос к `/api/projects` вернёт `503 Service Unavailable` с сообщением `GitHub integration is not configured`.
 
@@ -345,8 +364,9 @@ github.branch=${GITHUB_BRANCH:main}
 
 ## Соображения безопасности
 
+- **⚠️ GitHub PAT зашит в `application.properties`**: строка 11 содержит `github.token=${GITHUB_TOKEN:ghp_...}` — реальный токен встроен как fallback-значение, а строка 10 содержит закомментированный второй токен `github_pat_...`. Это противоречит заявленному правилу «токен не хранится в properties» и означает, что токен попал в git-историю. **Токены нужно отозвать на GitHub**, убрать fallback из properties (оставить `${GITHUB_TOKEN:}`) и почистить историю git, если репозиторий публичный или доступен третьим лицам.
 - **CORS** настроен либерально для локальной разработки (`allowedOrigins` включает `localhost:5173` и `localhost:3000`, `allowedHeaders("*")`). Перед публикацией ограничьте origins.
-- **GitHub PAT** вынесен из `application.properties`. Токен передаётся через переменную окружения `GITHUB_TOKEN` (dev) или Kubernetes Secret (`chart/templates/secret.yaml`) и не должен попадать в git. Для локальной разработки используйте `.env` (он в `.gitignore`), для Kubernetes — `chart/values-local.yaml` (тоже в `.gitignore`).
+- **GitHub PAT** штатно вынесен из кода в переменную окружения `GITHUB_TOKEN` (dev) или Kubernetes Secret (`chart/templates/secret.yaml`). Для локальной разработки используйте `.env` (он в `.gitignore`), для Kubernetes — `chart/values-local.yaml` (тоже в `.gitignore`).
 - **Валидация входных данных** использует `jakarta.validation` на DTO (`@NotBlank`). Дополнительной авторизации, аутентификации и защиты от инъекций нет.
 - **Импорт спецификаций** парсит произвольный JSON/YAML через `swagger-parser`. Размер загружаемых файлов ограничен `spring.servlet.multipart.max-file-size=10MB`.
 - **Rate limits GitHub API** — 5000 запросов в час для PAT. Список проектов выполняет `N+1` запросов (директории + каждый `openapi.json`).
@@ -355,10 +375,12 @@ github.branch=${GITHUB_BRANCH:main}
 
 ## Известные проблемы и подводные камни
 
-1. **`README.md` и `CLAUDE.md` устарели**: они описывают H2-базу данных, JPA-сущности и API-эндпоинты вроде `/api/projects/{id}/endpoints`, которых в коде нет. Доверяйте `AGENTS.md` и исходному коду.
-2. **Нет базы данных**: несмотря на упоминание JPA/H2 в старой документации, в `pom.xml` нет `spring-boot-starter-data-jpa` и H2. Все данные живут в GitHub.
-3. **Frontend-сборка**: `npm run build` завершается успешно, но выдаёт предупреждение о размере JS-чанка (>500 kB, в основном из-за swagger-ui). Это косметическое, функциональность не нарушается.
-4. **Сохранение на GitHub** требует валидного PAT и прав на репозиторий. При ошибках GitHub фронтенд показывает текст ошибки под кнопкой «Сохранить на GitHub».
-5. **Slug как ID**: после создания проекта изменить его идентификатор (имя папки) через UI нельзя — только путём переименования файла в GitHub.
-6. **Потеря данных при переименовании**: при `PUT /api/projects/{id}` список эндпоинтов перезаписывается целиком; отдельной стратегии merge нет.
-7. **Поля `ProjectDTO`** `createdAt`/`updatedAt`/`githubLastCommitSha`/`githubLastPublishedAt` в DTO есть, но бэкенд их не заполняет при чтении из GitHub — рассчитывать на них в UI не стоит.
+1. **Секрет в репозитории**: `application.properties` содержит реальный GitHub-токен как fallback и в закомментированной строке (см. раздел безопасности). Это самая критичная известная проблема.
+2. **`CLAUDE.md` устарел**: он описывает H2-базу данных, JPA-сущности и API-эндпоинты вроде `/api/projects/{id}/endpoints`, которых в коде нет. `README.md` переписан и актуален. Доверяйте `AGENTS.md` и исходному коду.
+3. **Нет базы данных**: несмотря на упоминание JPA/H2 в старой документации, в `pom.xml` нет `spring-boot-starter-data-jpa` и H2. Все данные живут в GitHub.
+4. **Frontend-сборка**: `npm run build` завершается успешно, но выдаёт предупреждение о размере JS-чанка (>500 kB, в основном из-за swagger-ui). Это косметическое, функциональность не нарушается.
+5. **Сохранение на GitHub** требует валидного PAT и прав на репозиторий. При ошибках GitHub фронтенд показывает текст ошибки под кнопкой «Сохранить на GitHub».
+6. **Slug как ID**: после создания проекта изменить его идентификатор (имя папки) через UI нельзя — только путём переименования файла в GitHub.
+7. **Потеря данных при переименовании**: при `PUT /api/projects/{id}` список эндпоинтов перезаписывается целиком; отдельной стратегии merge нет.
+8. **`src/main/resources/scrins/`** — папка со скриншотами попала в ресурсы backend и уезжает в JAR; это не код, при желании её стоит вынести или удалить.
+9. **Поля `ProjectDTO`** `createdAt`/`updatedAt`/`githubLastCommitSha`/`githubLastPublishedAt` в DTO есть, но бэкенд их не заполняет при чтении из GitHub — рассчитывать на них в UI не стоит.

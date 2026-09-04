@@ -4,11 +4,11 @@ Full-stack веб-приложение для визуального созда�
 
 - **Главная страница** — список проектов, создание нового проекта, импорт готового OpenAPI-файла (JSON/YAML).
 - **Редактор** — трёхпанельный интерфейс:
-  - слева — список эндпоинтов, экспорт JSON/YAML, сохранение на GitHub;
+  - слева — список эндпоинтов, экспорт JSON/YAML, сохранение на GitLab;
   - в центре — форма-конструктор эндпоинта (метод, путь, параметры, request body, ответы);
   - справа — живой Swagger UI и сырой JSON спецификации (клик по эндпоинту в превью открывает его в редакторе).
 
-Проекты хранятся **не в локальной базе**, а в заданном GitHub-репозитории: каждый проект — папка `{slug}/openapi.json`. Бэкенд работает с ними через GitHub REST API.
+Проекты хранятся **не в локальной базе**, а в заданном GitLab-проекте: каждый проект — папка `{slug}/openapi.json` в репозитории. Бэкенд работает с ними через GitLab REST API (v4).
 
 > Полная техническая документация для разработчиков — в [AGENTS.md](AGENTS.md).
 
@@ -16,14 +16,14 @@ Full-stack веб-приложение для визуального созда�
 
 ## Конфигурация
 
-Приложению нужен GitHub Personal Access Token с правами на чтение/запись содержимого репозитория.
+Приложению нужен GitLab Personal Access Token с scope `api` (чтение/запись репозитория).
 
 | Переменная окружения | Назначение | По умолчанию |
 |---|---|---|
-| `GITHUB_TOKEN` | **Обязательно.** PAT для GitHub API | — |
-| `GITHUB_OWNER` | Владелец репозитория | `KateMacevilo` |
-| `GITHUB_REPO` | Имя репозитория | `swagger-editor-backend` |
-| `GITHUB_BRANCH` | Целевая ветка | `main` |
+| `GITLAB_TOKEN` | **Обязательно.** PAT для GitLab API | — |
+| `GITLAB_PROJECT` | Путь проекта: `group/project` (или `group/sub/project`) | `KateMacevilo/swagger-editor-backend` |
+| `GITLAB_BRANCH` | Целевая ветка | `main` |
+| `GITLAB_URL` | Базовый URL для self-hosted GitLab | `https://gitlab.com` |
 
 Локально для dev-режима удобно использовать `.env` (шаблон — `.env.example`).
 
@@ -38,7 +38,7 @@ Full-stack веб-приложение для визуального созда�
 ```bash
 docker build -t swagger-editor-backend:1.0.0 .
 docker run -d --name swagger-editor -p 8080:8080 \
-  -e GITHUB_TOKEN=<токен> -e GITHUB_OWNER=<owner> -e GITHUB_REPO=<repo> \
+  -e GITLAB_TOKEN=<токен> -e GITLAB_PROJECT=<group/project> \
   swagger-editor-backend:1.0.0
 ```
 
@@ -90,7 +90,7 @@ docker save swagger-editor-backend:1.0.0-amd64 | gzip > swagger-editor-image.tar
 docker load -i swagger-editor-image.tar.gz
 
 docker run -d --name swagger-editor -p 8080:8080 `
-  -e GITHUB_TOKEN=<токен> -e GITHUB_OWNER=<owner> -e GITHUB_REPO=<repo> `
+  -e GITLAB_TOKEN=<токен> -e GITLAB_PROJECT=<group/project> `
   swagger-editor-backend:1.0.0-amd64
 ```
 
@@ -98,7 +98,7 @@ docker run -d --name swagger-editor -p 8080:8080 `
 
 - На целевой машине нужен только Docker (при его отсутствии — перенести офлайн-инсталлятор Docker Desktop).
 - Образ должен быть собран под архитектуру целевой машины (`linux/amd64` для обычных Windows/Linux, `linux/arm64` для Mac на Apple Silicon).
-- При работе приложению нужен доступ к `api.github.com` — без него проекты не загрузятся.
+- При работе приложению нужен доступ к GitLab API (`gitlab.com` или ваш `GITLAB_URL`) — без него проекты не загрузятся.
 - Обновление кода на offline-машине: правки здесь → пересборка образа → повторный `docker save` → перенос.
 
 ---
@@ -127,6 +127,6 @@ Smoke-тест загрузки контекста + регрессионный 
 
 ## Технологии
 
-**Backend:** Java 17, Spring Boot 3.2.3, GitHub REST API, swagger-models / swagger-core / swagger-parser, Jackson YAML, Lombok, Maven.
+**Backend:** Java 17, Spring Boot 3.2.3, GitLab REST API (v4), swagger-models / swagger-core / swagger-parser, Jackson YAML, Lombok, Maven.
 
 **Frontend:** React 18, React Router 6, Vite 5, Tailwind CSS 3, swagger-ui-react, Axios.

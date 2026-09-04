@@ -12,6 +12,6 @@ public class ProjectSummaryDTO {
     private String id;
     private String title;
     private String version;
-    private String githubFilePath;
+    private String gitLabFilePath;
     private int endpointCount;
 }

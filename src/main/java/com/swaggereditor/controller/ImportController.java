@@ -20,7 +20,7 @@ public class ImportController {
 
     private final ProjectService projectService;
 
-    /** Import from uploaded file (JSON or YAML) and commit to GitHub. */
+    /** Import from uploaded file (JSON or YAML) and commit to GitLab. */
     @PostMapping(value = "/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> importFile(@RequestParam("file") MultipartFile file) {
         try {
@@ -36,7 +36,7 @@ public class ImportController {
         }
     }
 
-    /** Import from raw text body and commit to GitHub. */
+    /** Import from raw text body and commit to GitLab. */
     @PostMapping(value = "/text", consumes = MediaType.TEXT_PLAIN_VALUE)
     public ResponseEntity<?> importText(@RequestBody String specContent) {
         try {

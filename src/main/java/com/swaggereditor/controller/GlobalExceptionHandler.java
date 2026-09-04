@@ -36,12 +36,12 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(HttpClientErrorException.class)
-    public ResponseEntity<ErrorResponseDTO> handleGitHubClientError(HttpClientErrorException e) {
+    public ResponseEntity<ErrorResponseDTO> handleGitClientError(HttpClientErrorException e) {
         String message = e.getResponseBodyAsString();
         if (message == null || message.isBlank()) {
             message = e.getMessage();
         }
-        log.warn("GitHub client error {}: {}", e.getStatusCode(), message);
+        log.warn("Git client error {}: {}", e.getStatusCode(), message);
         return buildResponse((HttpStatus) e.getStatusCode(), message);
     }
 

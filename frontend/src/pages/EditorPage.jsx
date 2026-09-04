@@ -215,7 +215,7 @@ export default function EditorPage() {
         <div className="p-2 border-t border-gray-200 space-y-1">
           <button onClick={handleSaveProject} disabled={saving}
             className="w-full py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition disabled:opacity-50">
-            {saving ? 'Сохранение...' : 'Сохранить на GitHub'}
+            {saving ? 'Сохранение...' : 'Сохранить на GitLab'}
           </button>
           {saveError && (
             <p className="text-[10px] text-red-600 px-1 break-words">{saveError}</p>

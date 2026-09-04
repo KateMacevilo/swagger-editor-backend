@@ -4,13 +4,13 @@
 
 Full-stack веб-приложение для визуального создания, редактирования и предпросмотра спецификаций **OpenAPI 3.0.0 (Swagger)**.
 
-- **Главная страница** — список проектов из GitHub, создание нового проекта, импорт готового OpenAPI-файла (JSON/YAML).
+- **Главная страница** — список проектов, создание нового проекта, импорт готового OpenAPI-файла (JSON/YAML).
 - **Редактор** — трёхпанельный интерфейс:
-  - **Левая панель** — список эндпоинтов проекта, кнопки экспорта JSON/YAML, сохранения на GitHub и редактирования мета-информации проекта.
+  - **Левая панель** — список эндпоинтов проекта, кнопки экспорта JSON/YAML, сохранения на GitLab и редактирования мета-информации проекта.
   - **Центральная панель** — форма-конструктор эндпоинта: метод, путь, параметры, request body, ответы.
   - **Правая панель** — живой Swagger UI и сырой JSON сгенерированной спецификации.
 
-Проекты хранятся не в локальной базе данных, а в заданном GitHub-репозитории: каждый проект — это папка `{slug}/openapi.json`. Бэкенд читает, создаёт, обновляет и удаляет эти файлы через GitHub REST API.
+Проекты хранятся не в локальной базе данных, а в заданном GitLab-проекте (репозитории): каждый проект — это папка `{slug}/openapi.json`. Бэкенд читает, создаёт, обновляет и удаляет эти файлы через GitLab REST API (v4). GitHub как хранилище был полностью заменён на GitLab — GitHub-кода в проекте не осталось.
 
 > **Важно:** файл `CLAUDE.md` в корне устарел — он описывает H2/JPA-версию и API с подресурсами `/api/projects/{id}/endpoints`, которых в текущей кодовой базе нет. `README.md` актуален. Доверяйте этому `AGENTS.md` и исходному коду.
 
@@ -20,16 +20,15 @@ Full-stack веб-приложение для визуального созда�
 
 ### Backend
 
-- **Java 17** (target), фактически проверено на **OpenJDK 21.0.10**.
-- **Spring Boot 3.2.3** (`spring-boot-starter-web`, `spring-boot-starter-validation`).
-- **GitHub REST API** — единственное хранилище проектов.
+- **Java 17** (target для сборки), Spring Boot 3.2.3 (`spring-boot-starter-web`, `spring-boot-starter-validation`).
+- **GitLab REST API (v4)** — единственное хранилище проектов.
 - **Swagger ecosystem**:
   - `io.swagger.core.v3:swagger-models:2.2.20` — объектная модель OpenAPI 3.0.
   - `io.swagger.core.v3:swagger-core:2.2.20` — сериализация в JSON/YAML.
   - `io.swagger.parser.v3:swagger-parser:2.1.21` — импорт существующих спецификаций.
 - **Jackson YAML** (`jackson-dataformat-yaml`).
-- **Lombok** (scope `provided`, исключён из fat-jar).
-- **Maven** 3.9.16 (доступен в `PATH` как `/opt/homebrew/bin/mvn`).
+- **Lombok** (scope `provided`, исключён из fat-jar через `spring-boot-maven-plugin`).
+- **Maven** — сборка (`pom.xml` в корне).
 
 ### Frontend
 
@@ -38,46 +37,46 @@ Full-stack веб-приложение для визуального созда�
 - **Tailwind CSS 3** + **PostCSS/Autoprefixer**.
 - **swagger-ui-react 5** — встроенный Swagger UI.
 - **Axios** — HTTP-клиент.
-- **Node.js 26.3.0**, **npm 11.16.0** (пути `/opt/homebrew/bin/node` и `/opt/homebrew/bin/npm`).
+- Фронтенд-тесты, линтеры и форматтеры **не настроены**.
 
 ---
 
 ## Структура проекта
 
 ```
-/Users/katerinazaharenko/Documents/dkr-swagger/swagger-editor-backend/
+swagger-editor-backend/
 ├── pom.xml                              # Корневой Maven POM (backend)
 ├── Dockerfile                           # Контейнерный образ для k8s (eclipse-temurin:17-jre)
 ├── Dockerfile.full                      # Multi-stage: собирает frontend+backend внутри Docker
-├── .dockerignore                        # Исключения из контекста сборки образа
-├── .env.example                         # Шаблон переменных окружения (не секреты в git)
+├── .dockerignore
+├── .env.example                         # Шаблон переменных окружения
 ├── src/main/java/com/swaggereditor/
 │   ├── SwaggerEditorApplication.java    # Точка входа Spring Boot
 │   ├── config/
-│   │   ├── CorsConfig.java              # CORS: разрешены :5173 и :3000
-│   │   ├── GitHubConfig.java            # RestTemplate bean + @EnableConfigurationProperties
-│   │   ├── GitHubProperties.java        # github.* properties (Java record, branch default = main)
+│   │   ├── CorsConfig.java              # CORS: разрешены :5173 и :3000 для /api/**
+│   │   ├── GitLabConfig.java            # RestTemplate bean + @EnableConfigurationProperties
+│   │   ├── GitLabProperties.java        # gitlab.* properties (Java record, defaults: branch=main, url=gitlab.com)
 │   │   └── SpaFallbackFilter.java       # Forward не-API путей в index.html (SPA)
-│   ├── controller/                      # REST-контроллеры
+│   ├── controller/
 │   │   ├── ProjectController.java       # CRUD проектов (/api/projects)
 │   │   ├── SpecificationController.java # Генерация OpenAPI JSON/YAML из ProjectDTO (/api/spec)
 │   │   ├── ImportController.java        # Импорт файла/текста (/api/import)
-│   │   └── GlobalExceptionHandler.java  # Единообразные ошибки
+│   │   └── GlobalExceptionHandler.java  # Единообразные ошибки (@RestControllerAdvice)
 │   ├── dto/                             # Request/response DTO (Lombok @Data, jakarta.validation)
-│   │   ├── ProjectDTO.java
+│   │   ├── ProjectDTO.java              #   (title @NotBlank; endpoints, serverUrl, version и т.д.)
 │   │   ├── ProjectSummaryDTO.java
-│   │   ├── EndpointDTO.java
+│   │   ├── EndpointDTO.java             #   (path, method @NotBlank; tags — List<String>)
 │   │   ├── ApiParameterDTO.java
 │   │   ├── ApiResponseDTO.java
 │   │   └── ErrorResponseDTO.java
-│   └── service/                         # Бизнес-логика
-│       ├── ProjectService.java          # Чтение/запись проектов в GitHub
-│       ├── OpenApiService.java          # Парсинг/сериализация OpenAPI ↔ DTO
-│       └── GitHubService.java           # Низкоуровневые операции с файлами GitHub
+│   └── service/
+│       ├── ProjectService.java          # Чтение/создание/обновление/удаление проектов в GitLab
+│       ├── OpenApiService.java          # Парсинг/сериализация OpenAPI ↔ DTO, toSlug()
+│       └── GitLabService.java           # Низкоуровневые операции с файлами GitLab (API v4)
 ├── src/main/resources/
-│   ├── application.properties           # Порт, multipart, GitHub-конфиг
+│   ├── application.properties           # Порт 8080, multipart 10MB, gitlab-конфиг
 │   ├── json-test/swagger.json           # Фикстура open-banking-спецификации для регрессионного теста (~1 МБ)
-│   ├── scrins/                          # Скриншоты (не код, не используются приложением)
+│   ├── scrins/                          # Скриншоты (не код; попадают в JAR, см. «Известные проблемы»)
 │   └── static/                          # Сюда копируется frontend/dist при production-сборке
 ├── src/test/java/com/swaggereditor/
 │   ├── SwaggerEditorApplicationTests.java  # Smoke-тест загрузки контекста
@@ -87,8 +86,8 @@ Full-stack веб-приложение для визуального созда�
 │   ├── values.yaml
 │   └── templates/
 │       ├── _helpers.tpl
-│       ├── configmap.yaml
-│       ├── secret.yaml
+│       ├── configmap.yaml               # GITLAB_PROJECT / GITLAB_BRANCH / GITLAB_URL и др.
+│       ├── secret.yaml                  # GITLAB_TOKEN (required)
 │       ├── deployment.yaml
 │       ├── service.yaml
 │       ├── ingress.yaml
@@ -116,27 +115,19 @@ Full-stack веб-приложение для визуального созда�
 
 ---
 
-## Команды сборки и запуска
+## Сборка и запуск
 
 ### Dev-режим (два терминала)
 
 ```bash
-# 1. Backend (из корня проекта, где лежит pom.xml)
-mvn -f pom.xml spring-boot:run
-```
+# 1. Backend (из корня проекта)
+mvn -f pom.xml spring-boot:run          # стартует на http://localhost:8080
 
-Бэкенд стартует на **http://localhost:8080**.
-
-```bash
 # 2. Frontend (в отдельном терминале)
 cd frontend
-npm install   # только при первом запуске
-npm run dev
+npm install                             # только при первом запуске
+npm run dev                             # стартует на http://localhost:5173
 ```
-
-Фронтенд стартует на **http://localhost:5173**.
-
-> `mvn` доступен в `PATH` как `/opt/homebrew/bin/mvn` (Apache Maven 3.9.16).
 
 ### Production-сборка (один JAR)
 
@@ -149,77 +140,42 @@ mvn -f pom.xml package -DskipTests
 java -jar target/swagger-editor-backend-1.0.0.jar
 ```
 
-Приложение будет доступно на **http://localhost:8080**. Каталог `src/main/resources/static/` — это артефакт сборки (в git не закоммичен, но и не в `.gitignore`); перед сборкой JAR его нужно обновить командой выше.
+Приложение доступно на **http://localhost:8080**. Каталог `src/main/resources/static/` — артефакт сборки; перед упаковкой JAR его нужно обновить командой выше.
 
 ### Сборка Docker-образа
 
 ```bash
-cd frontend
-npm run build
-cp -r dist/* ../src/main/resources/static/
-cd ..
-mvn -f pom.xml package -DskipTests
-
+# Нужен готовый JAR (см. production-сборку выше)
 docker build -t swagger-editor-backend:1.0.0 .
-```
-
-Базовый образ — `eclipse-temurin:17-jre`, приложение слушает порт 8080. Dockerfile копирует готовый `target/swagger-editor-backend-1.0.0.jar` и сам ничего не собирает — JAR нужен заранее.
-
-### Сборка целиком в Docker (без локальных Node/Maven/JDK)
-
-`Dockerfile.full` — multi-stage: frontend собирается в стадии `node`, JAR — в стадии `maven`, в финальный образ копируется только JAR. Полезен на машинах, где не установлены npm/mvn (например, Windows без настроенного окружения):
-
-```bash
-docker build -f Dockerfile.full -t swagger-editor-backend:1.0.0 .
-
 docker run -d --name swagger-editor -p 8080:8080 \
-  -e GITHUB_TOKEN=<PAT> -e GITHUB_OWNER=<owner> -e GITHUB_REPO=<repo> \
+  -e GITLAB_TOKEN=<PAT> -e GITLAB_PROJECT=<group/project> \
   swagger-editor-backend:1.0.0
 ```
 
-Цикл «правка кода → сборка → запуск» на такой машине: редактируешь исходники, затем `docker build -f Dockerfile.full ...` и пересоздаёшь контейнер. Нужны только Docker и интернет (для зависимостей npm/maven).
+Базовый образ — `eclipse-temurin:17-jre`, порт 8080. `Dockerfile` копирует готовый JAR и сам ничего не собирает.
+
+### Полная сборка в Docker (без локальных Node/Maven/JDK)
+
+`Dockerfile.full` — multi-stage: frontend собирается в стадии `node`, JAR — в стадии `maven`, в финальный образ копируется только JAR:
+
+```bash
+docker build -f Dockerfile.full -t swagger-editor-backend:1.0.0 .
+```
 
 ### Развёртывание в Kubernetes через Helm
 
-Структура chart:
-
-```
-chart/
-├── Chart.yaml
-├── values.yaml
-└── templates/
-    ├── _helpers.tpl
-    ├── configmap.yaml
-    ├── secret.yaml
-    ├── deployment.yaml
-    ├── service.yaml
-    ├── ingress.yaml
-    └── hpa.yaml
-```
-
-Сборка образа и установка:
-
 ```bash
-# 1. Собрать production JAR (frontend уже в src/main/resources/static/)
-mvn -f pom.xml package -DskipTests
-
-# 2. Собрать Docker-образ и загрузить в registry
-#    (замените registry/namespace и тег на свои)
-docker build -t <registry>/<namespace>/swagger-editor-backend:1.0.0 .
-docker push <registry>/<namespace>/swagger-editor-backend:1.0.0
-
-# 3. Подготовить values-local.yaml с секретами и локальными настройками
+# 1. Собрать production JAR, собрать и запушить образ в registry (см. выше)
+# 2. Подготовить chart/values-local.yaml с секретами и локальными настройками
 cat > chart/values-local.yaml <<EOF
-github:
-  owner: <owner>
-  repo: <repo>
+gitlab:
+  project: <group/project>
   branch: main
-githubToken: <PAT>
-
+  url: https://gitlab.com
+gitlabToken: <PAT>
 image:
   repository: <registry>/<namespace>/swagger-editor-backend
   tag: "1.0.0"
-
 ingress:
   enabled: true
   className: nginx
@@ -230,14 +186,12 @@ ingress:
           pathType: Prefix
 EOF
 
-# 4. Установить chart
+# 3. Установить / обновить
 helm install swagger-editor ./chart -f chart/values-local.yaml
-
-# Обновление
 helm upgrade swagger-editor ./chart -f chart/values-local.yaml
 ```
 
-> `chart/values-local.yaml` добавлен в `.gitignore`, чтобы секреты и кластерные настройки не попали в git. Шаблон `secret.yaml` обязателен: при пустом `githubToken` установка chart завершится ошибкой (`required`).
+`chart/values-local.yaml` добавлен в `.gitignore` (может содержать секреты). Шаблон `secret.yaml` обязателен: при пустом `gitlabToken` установка завершится ошибкой (`required`).
 
 ### Тесты
 
@@ -245,7 +199,12 @@ helm upgrade swagger-editor ./chart -f chart/values-local.yaml
 mvn -f pom.xml test
 ```
 
-Проверено: smoke-тест `SwaggerEditorApplicationTests.contextLoads()` проходит успешно. Добавлен регрессионный `ImportRoundTripTest` — он парсит реальную open-banking-спецификацию из `src/main/resources/json-test/swagger.json` (~1 МБ, 34 пути, 471 схема в компонентах; после разворачивания методов — 42 эндпоинта) и проверяет: теги с запятыми не разрываются, `$ref`-тела раскрываются с сохранением примеров, все эндпоинты имеют summary. Специфичные тесты GitHub-операций не настроены. Фронтенд-тесты и линтеры не настроены.
+Состав тестов:
+
+- `SwaggerEditorApplicationTests.contextLoads()` — smoke-тест загрузки контекста Spring.
+- `ImportRoundTripTest` — регрессионный round-trip: парсит реальную open-banking-спецификацию из `src/main/resources/json-test/swagger.json` (34 пути, 471 схема в компонентах; после разворачивания методов — 42 эндпоинта) и проверяет: теги с запятыми не разрываются, `$ref`-тела раскрываются с сохранением примеров, все эндпоинты имеют summary, ограничения схем (`minLength`/`maxLength`/`pattern`) и кириллица выживают в регенерированном JSON.
+
+Тесты GitLab-операций не настроены (требуют живого токена) — чтение/запись/удаление файлов нужно один раз проверить руками с реальным PAT. Фронтенд-тестов нет.
 
 ---
 
@@ -253,93 +212,93 @@ mvn -f pom.xml test
 
 | Method | Path | Описание |
 |--------|------|----------|
-| GET | `/api/projects` | Список проектов из GitHub |
-| POST | `/api/projects` | Создать проект в GitHub |
-| GET | `/api/projects/{id}` | Получить проект (JSON из GitHub) |
-| PUT | `/api/projects/{id}` | Сохранить проект в GitHub |
-| DELETE | `/api/projects/{id}` | Удалить `openapi.json` из GitHub |
+| GET | `/api/projects` | Список проектов из GitLab |
+| POST | `/api/projects` | Создать проект в GitLab (201) |
+| GET | `/api/projects/{id}` | Получить проект (JSON из GitLab); 404 если нет |
+| PUT | `/api/projects/{id}` | Сохранить проект в GitLab |
+| DELETE | `/api/projects/{id}` | Удалить `openapi.json` из GitLab (204) |
 | POST | `/api/spec/json` | Сгенерировать OpenAPI JSON из `ProjectDTO` |
 | POST | `/api/spec/yaml` | Сгенерировать OpenAPI YAML из `ProjectDTO` |
-| POST | `/api/import/file` | Импорт файла (multipart/form-data) |
+| POST | `/api/import/file` | Импорт файла (multipart/form-data, поле `file`) |
 | POST | `/api/import/text` | Импорт строки (text/plain) |
 
 Эндпоинты проекта не выделены в отдельный подресурс: они хранятся как список `endpoints` внутри `ProjectDTO` и перезаписываются целиком при `PUT /api/projects/{id}`.
+
+Коды ошибок (`GlobalExceptionHandler`): `NoSuchElementException` → 404, `IllegalArgumentException` → 400, `IllegalStateException` → 503, `HttpClientErrorException` → статус GitLab, остальное → 500. Тело ошибки — `ErrorResponseDTO` (timestamp, status, error, message).
 
 ---
 
 ## Архитектурные решения
 
-### GitHub как единственный источник правды
+### GitLab как единственный источник правды
 
-Бэкенд не использует базу данных. Каждый проект хранится в GitHub-репозитории как `{slug}/openapi.json`:
+Бэкенд не использует базу данных (JPA/H2 в `pom.xml` отсутствуют). Каждый проект — файл `{slug}/openapi.json` в GitLab-репозитории:
 
-- `ProjectService.findAll()` получает список директорий через `GET /repos/{owner}/{repo}/contents/` и для каждой читает `openapi.json`. Загрузка выполняется параллельно в пуле до 10 потоков, результат сортируется по названию (без учёта регистра). Проекты, которые не удалось прочитать, молча пропускаются с предупреждением в лог.
-- `ProjectService.findById(id)` читает JSON по пути `{id}/openapi.json` и парсит его в `ProjectDTO`; 404 превращается в `NoSuchElementException` → HTTP 404.
-- `ProjectService.create(dto)` генерирует slug из названия, сериализует DTO в JSON и создаёт файл в GitHub. Пустая версия заменяется на `1.0.0`.
-- `ProjectService.update(id, dto)` сериализует `ProjectDTO` в JSON и обновляет файл в GitHub.
-- `ProjectService.importSpec(content)` парсит стороннюю спецификацию и сразу коммитит результат в новую директорию.
+- `ProjectService.findAll()` получает список директорий через `GET /projects/{id}/repository/tree` и для каждой читает `openapi.json`. Загрузка параллельна: пул `min(кол-во записей, 10)` потоков, результат сортируется по названию (без учёта регистра). Проекты, которые не удалось прочитать, молча пропускаются с warn в лог.
+- `findById(id)` читает `{id}/openapi.json`; 404 → `NoSuchElementException` → HTTP 404.
+- `create(dto)` генерирует slug из названия, сериализует DTO в JSON и создаёт файл; пустая версия заменяется на `1.0.0`.
+- `update(id, dto)` сериализует `ProjectDTO` в JSON и обновляет файл целиком.
+- `importSpec(content)` парсит стороннюю спецификацию и сразу коммитит результат в новую директорию.
 
-`GitHubService` работает напрямую с REST API: запись/удаление — через `PUT`/`DELETE /repos/{owner}/{repo}/contents/{path}` (sha существующего файла запрашивается отдельно), чтение — через CDN `raw.githubusercontent.com`. Путь в репозитории и `sha` последнего коммита не сохраняются в БД (её нет), а вычисляются/запрашиваются у GitHub при каждой операции. Если токен, owner или repo не заданы, `GitHubService` бросает `IllegalStateException("GitHub integration is not configured...")` → HTTP 503.
+`GitLabService` работает напрямую с REST API v4 (база `{gitlab.url}/api/v4/projects/{project}`, где `{project}` — URL-encoded путь вида `group%2Fproject`):
+
+- **Список директорий** — `GET .../repository/tree?path=...&ref={branch}&per_page=100`. GitLab возвращает типы `tree`/`blob`; сервис нормализует их в `dir`/`file`.
+- **Чтение файла** — `GET .../repository/files/{file_path}/raw?ref={branch}`. Читается в `byte[]` с явным декодированием UTF-8: RestTemplate без charset в ответе декодировал бы в ISO-8859-1 и портил кириллицу.
+- **Запись** — один коммит `POST .../repository/commits` с `actions: [{action: create|update, file_path, content}]`. В отличие от GitHub, sha не нужен: существование файла проверяется через `GET .../files/{path}?ref=...` (200/404), контент передаётся открытым текстом (без base64).
+- **Удаление** — коммит с `action: delete`.
+- Аутентификация — заголовок `PRIVATE-TOKEN: {token}`, плюс `User-Agent: swagger-editor-backend`.
+
+Если токен или project не заданы, `validateConfig()` бросает `IllegalStateException("GitLab integration is not configured...")` → HTTP 503. `effectiveProject()` подчищает случайные префиксы `https://.../` и суффикс `.git` у пути проекта. Self-hosted GitLab — через `gitlab.url`.
 
 ### Хранение схем
 
-Request body и response body хранятся как **JSON-строки** внутри DTO (`requestBodySchema`, `bodySchema`). `OpenApiService` преобразует их в `io.swagger.v3.oas.models.media.Schema` через `ObjectMapper` (`mapToSchema` / `schemaToMap`), поддерживаются типы `string`, `integer`, `number`, `boolean`, `array`, `object`, поля `format`, `description`, `example`, `default`, `enum`, `nullable`, `minLength`, `maxLength`, `pattern`, `minItems`, `maxItems`, `additionalProperties`, `oneOf`/`anyOf`/`allOf`, `properties`, `required`. Request body добавляется только для методов POST/PUT/PATCH и только с media type `application/json`; при парсинге сохраняется первый сервер из `servers` и только тело под `application/json`.
+Request body и response body хранятся как **JSON-строки** внутри DTO (`requestBodySchema`, `bodySchema`). `OpenApiService` преобразует их в `io.swagger.v3.oas.models.media.Schema` через Jackson (`mapToSchema` / `schemaToMap`); поддерживаются типы `string`, `integer`, `number`, `boolean`, `array`, `object` и поля `format`, `description`, `example`, `default`, `enum`, `nullable`, `minLength`, `maxLength`, `pattern`, `minItems`, `maxItems`, `additionalProperties`, `oneOf`/`anyOf`/`allOf`, `properties`, `required`. Request body добавляется только для POST/PUT/PATCH и только с media type `application/json`; при парсинге сохраняется первый server из `servers` и только тело под `application/json`.
 
 ### Tags эндпоинтов
 
-В `EndpointDTO` tags хранятся как `List<String>` — **не** как строка через запятую: тег может сам содержать запятые (например, «Создание, получение и отзыв платежа ...»), и join/split по `,` разрывал бы его на фрагменты. Фронтенд показывает список в input через `join(', ')` и разбивает введённое значение обратно.
+В `EndpointDTO` tags — это `List<String>`, **не** строка через запятую: тег может сам содержать запятые (например, «Создание, получение и отзыв платежа ...»), и join/split по `,` разрывал бы его на фрагменты. На этом основан регрессионный тест `ImportRoundTripTest`.
 
-### Генерация OpenAPI
+### Генерация и парсинг OpenAPI
 
-`OpenApiService.toJson(projectDTO)` / `toYaml(projectDTO)` собирают объект `OpenAPI` из `swagger-models` (версия спецификации фиксирована — `3.0.0`) и сериализуют через `io.swagger.v3.core.util.Json` / `Yaml`. Если у эндпоинта нет ответов, добавляется дефолтный `200 OK`. Парсинг выполняет `OpenAPIV3Parser` из `swagger-parser` с включённым `resolveFully(true)` — внутренние `$ref` на `components.schemas` раскрываются inline, иначе тела запросов/ответов, ссылающиеся на компоненты, превращались бы в `{}`; поддерживаются 7 HTTP-методов: GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD. Чтение файлов из GitHub выполняется явно в UTF-8, иначе RestTemplate при отсутствии charset в ответе декодировал бы их в ISO-8859-1 и портил кириллицу.
+- Генерация: `OpenApiService.toJson/toYaml` собирают объект `OpenAPI` из `swagger-models` (версия спецификации фиксирована — `3.0.0`) и сериализуют через `io.swagger.v3.core.util.Json` / `Yaml`. Если у эндпоинта нет ответов, добавляется дефолтный `200 OK`. Поддерживаются 7 HTTP-методов: GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD (`OpenApiService.setOperation`).
+- Парсинг: `OpenAPIV3Parser` с `resolveFully(true)` — внутренние `$ref` на `components.schemas` раскрываются inline, иначе тела запросов/ответов, ссылающиеся на компоненты, превращались бы в `{}`.
+- Слаг проекта (`toSlug`): нижний регистр, неалфавитно-цифровые символы → `-`, крайние дефисы удаляются; пустое название → `untitled-project`, пустой результат очистки → `project`.
 
 ### Обновление превью
 
-`EditorPage` при изменении проекта с задержкой (debounce 400 мс) вызывает `POST /api/spec/json` и передаёт полученный spec в `SwaggerPreview`.
-
-### Идентификатор проекта
-
-Идентификатором проекта служит имя папки в репозитории (slug от названия), которое формируется в `OpenApiService.toSlug()`: нижний регистр, неалфавитно-цифровые символы заменяются на `-`, крайние дефисы удаляются. Пустое/blank название превращается в `untitled-project`, а пустой результат очистки — в `project`.
+`EditorPage` при изменении проекта с debounce 400 мс вызывает `POST /api/spec/json` и передаёт полученный spec в `SwaggerPreview`.
 
 ### CORS и прокси
 
-В dev-режиме фронтенд ходит на `/api/*`, которые Vite проксирует на `localhost:8080`. Дополнительно `CorsConfig` разрешает запросы с `http://localhost:5173` и `http://localhost:3000` к `/api/**`.
+В dev-режиме фронтенд ходит на `/api/*`, которые Vite проксирует на `localhost:8080`. Дополнительно `CorsConfig` разрешает запросы с `http://localhost:5173` и `http://localhost:3000` к `/api/**` (methods GET/POST/PUT/DELETE/OPTIONS, `allowedHeaders("*")`, без credentials).
 
 ### Раздача UI в production
 
-В production-сборке фронтенд (`frontend/dist`) копируется в `src/main/resources/static/` и раздаётся Spring Boot из того же JAR, что и backend. API остаётся на `/api/**`. Чтобы client-side роутинг React Router работал при обновлении страницы или прямом заходе по ссылке (например, `/editor/my-project`), `SpaFallbackFilter` перенаправляет все GET-запросы, не начинающиеся с `/api/` и `/assets/`, на `index.html`.
+В production-сборке фронтенд (`frontend/dist`) копируется в `src/main/resources/static/` и раздаётся Spring Boot из того же JAR, что и backend. `SpaFallbackFilter` перенаправляет все запросы, не начинающиеся с `/api/` и `/assets/` (и не равные `/index.html`), на `index.html` — это позволяет client-side роутингу React Router работать при обновлении страницы и прямом заходе по ссылке (например, `/editor/my-project`).
 
 ---
 
 ## Конфигурация
 
-Основные параметры в `src/main/resources/application.properties`:
+Основные параметры — `src/main/resources/application.properties`:
 
 ```properties
 server.port=8080
 spring.servlet.multipart.max-file-size=10MB
 spring.servlet.multipart.max-request-size=10MB
 
-# github.token задаётся через переменную окружения GITHUB_TOKEN
-github.token=${GITHUB_TOKEN:}
-github.owner=${GITHUB_OWNER:KateMacevilo}
-github.repo=${GITHUB_REPO:swagger-editor-backend}
-github.branch=${GITHUB_BRANCH:main}
+gitlab.token=${GITLAB_TOKEN:}          # секрет: только через env / k8s Secret
+gitlab.project=${GITLAB_PROJECT:KateMacevilo/swagger-editor-backend}
+gitlab.branch=${GITLAB_BRANCH:main}
+gitlab.url=${GITLAB_URL:https://gitlab.com}
 ```
 
-- `github.token` — Personal Access Token с правами на чтение и запись содержимого репозитория. Штатно передаётся через переменную окружения `GITHUB_TOKEN` или Kubernetes Secret (см. раздел «Соображения безопасности» — в файле есть отклонение от этого правила).
-- `github.owner` и `github.repo` — короткие имена (`KateMacevilo/swagger-editor-backend`), не полный URL. Можно переопределить через `GITHUB_OWNER`/`GITHUB_REPO`. `GitHubService` всё равно подчищает случайные префиксы `https://github.com/` и суффикс `.git`.
-- `github.branch` — целевая ветка, по умолчанию `main`. Переопределяется через `GITHUB_BRANCH`.
+- `gitlab.token` — Personal Access Token GitLab со scope `api`. Штатно через переменную окружения `GITLAB_TOKEN` или Kubernetes Secret. В файле fallback пустой — секретов в репозитории нет.
+- `gitlab.project` — путь проекта с namespace (`group/project`, допускаются вложенные группы `group/sub/project`), **не полный URL**. Переопределяется через `GITLAB_PROJECT`.
+- `gitlab.branch` — целевая ветка, по умолчанию `main`.
+- `gitlab.url` — базовый URL инстанса без trailing slash и без `/api/v4`; для self-hosted задайте `GITLAB_URL`.
 
-> См. `.env.example` для локального запуска и `chart/values.yaml` для Kubernetes. Helm-шаблон `configmap.yaml` пробрасывает `GITHUB_OWNER`/`GITHUB_REPO`/`GITHUB_BRANCH`, `secret.yaml` — `GITHUB_TOKEN`, причём `githubToken` обязателен.
-
----
-
-## Инструкции по тестированию
-
-- **Backend**: тесты `SwaggerEditorApplicationTests` (загрузка контекста) и `ImportRoundTripTest` (импорт реальной open-banking-спецификации из `src/main/resources/json-test/swagger.json`: 34 пути / 42 эндпоинта после разворачивания методов, теги с запятыми, `$ref`-тела, summary).
-- **Frontend**: тесты, линтеры и форматтеры не настроены.
-- **Ручное тестирование**: убедитесь, что `github.token`, `github.owner` и `github.repo` заданы, иначе любой запрос к `/api/projects` вернёт `503 Service Unavailable` с сообщением `GitHub integration is not configured`.
+> См. `.env.example` для локального запуска и `chart/values.yaml` для Kubernetes. Helm-шаблон `configmap.yaml` пробрасывает `GITLAB_PROJECT`/`GITLAB_BRANCH`/`GITLAB_URL` (и настройки порта/multipart), `secret.yaml` — `GITLAB_TOKEN`.
 
 ---
 
@@ -347,10 +306,10 @@ github.branch=${GITHUB_BRANCH:main}
 
 - **Backend**:
   - Lombok `@Data` / `@RequiredArgsConstructor` для DTO и сервисов.
-  - `jakarta.validation.constraints.NotBlank` на обязательных полях DTO.
+  - `jakarta.validation.constraints.NotBlank` на обязательных полях DTO (`ProjectDTO.title`, `EndpointDTO.path`, `EndpointDTO.method`).
   - Контроллеры возвращают DTO напрямую или `ResponseEntity<T>`.
-  - Глобальная обработка ошибок в `GlobalExceptionHandler` (`@RestControllerAdvice`): `NoSuchElementException` → 404, `IllegalArgumentException` → 400, `IllegalStateException` → 503, `HttpClientErrorException` → статус GitHub, остальное → 500.
-  - Java-записи используются только для `GitHubProperties`.
+  - Глобальная обработка ошибок — `GlobalExceptionHandler` (`@RestControllerAdvice`).
+  - Java-записи используются только для `GitLabProperties`.
   - Логирование через SLF4J (`LoggerFactory.getLogger(...)`), логи на английском.
   - Комментарии и Javadoc в коде — на английском; UI и сообщения пользователю — на русском.
 
@@ -364,23 +323,25 @@ github.branch=${GITHUB_BRANCH:main}
 
 ## Соображения безопасности
 
-- **⚠️ GitHub PAT зашит в `application.properties`**: строка 11 содержит `github.token=${GITHUB_TOKEN:ghp_...}` — реальный токен встроен как fallback-значение, а строка 10 содержит закомментированный второй токен `github_pat_...`. Это противоречит заявленному правилу «токен не хранится в properties» и означает, что токен попал в git-историю. **Токены нужно отозвать на GitHub**, убрать fallback из properties (оставить `${GITHUB_TOKEN:}`) и почистить историю git, если репозиторий публичный или доступен третьим лицам.
-- **CORS** настроен либерально для локальной разработки (`allowedOrigins` включает `localhost:5173` и `localhost:3000`, `allowedHeaders("*")`). Перед публикацией ограничьте origins.
-- **GitHub PAT** штатно вынесен из кода в переменную окружения `GITHUB_TOKEN` (dev) или Kubernetes Secret (`chart/templates/secret.yaml`). Для локальной разработки используйте `.env` (он в `.gitignore`), для Kubernetes — `chart/values-local.yaml` (тоже в `.gitignore`).
-- **Валидация входных данных** использует `jakarta.validation` на DTO (`@NotBlank`). Дополнительной авторизации, аутентификации и защиты от инъекций нет.
-- **Импорт спецификаций** парсит произвольный JSON/YAML через `swagger-parser`. Размер загружаемых файлов ограничен `spring.servlet.multipart.max-file-size=10MB`.
-- **Rate limits GitHub API** — 5000 запросов в час для PAT. Список проектов выполняет `N+1` запросов (директории + каждый `openapi.json`).
+- **GitLab PAT** вынесен из кода в переменную окружения `GITLAB_TOKEN` (dev) или Kubernetes Secret (`chart/templates/secret.yaml`). Для локальной разработки — `.env` (в `.gitignore`), для Kubernetes — `chart/values-local.yaml` (тоже в `.gitignore`).
+- **⚠️ Исторический инцидент**: до миграции на GitLab в `application.properties` был зашит реальный GitHub-токен (`ghp_...`, `github_pat_...`), он попал в git-историю. Эти токены нужно считать скомпрометированными: отозвать на GitHub и, если репозиторий публичный, почистить историю git.
+- **CORS** настроен либерально для локальной разработки. Перед публикацией ограничьте origins.
+- **Валидация входных данных** — `jakarta.validation` на DTO. Дополнительной авторизации, аутентификации и защиты от инъекций нет — приложение рассчитано на доверенную внутреннюю среду.
+- **Импорт спецификаций** парсит произвольный JSON/YAML через `swagger-parser`; размер загрузки ограничен `10MB` (multipart).
+- **Rate limits GitLab API** зависят от тарифа/инстанса. Список проектов выполняет `N+1` запросов (дерево + каждый `openapi.json`).
 
 ---
 
 ## Известные проблемы и подводные камни
 
-1. **Секрет в репозитории**: `application.properties` содержит реальный GitHub-токен как fallback и в закомментированной строке (см. раздел безопасности). Это самая критичная известная проблема.
-2. **`CLAUDE.md` устарел**: он описывает H2-базу данных, JPA-сущности и API-эндпоинты вроде `/api/projects/{id}/endpoints`, которых в коде нет. `README.md` переписан и актуален. Доверяйте `AGENTS.md` и исходному коду.
-3. **Нет базы данных**: несмотря на упоминание JPA/H2 в старой документации, в `pom.xml` нет `spring-boot-starter-data-jpa` и H2. Все данные живут в GitHub.
-4. **Frontend-сборка**: `npm run build` завершается успешно, но выдаёт предупреждение о размере JS-чанка (>500 kB, в основном из-за swagger-ui). Это косметическое, функциональность не нарушается.
-5. **Сохранение на GitHub** требует валидного PAT и прав на репозиторий. При ошибках GitHub фронтенд показывает текст ошибки под кнопкой «Сохранить на GitHub».
-6. **Slug как ID**: после создания проекта изменить его идентификатор (имя папки) через UI нельзя — только путём переименования файла в GitHub.
-7. **Потеря данных при переименовании**: при `PUT /api/projects/{id}` список эндпоинтов перезаписывается целиком; отдельной стратегии merge нет.
+1. **Исторический секрет в git-истории** — см. раздел «Соображения безопасности».
+2. **`CLAUDE.md` устарел** — описывает H2-базу, JPA-сущности и эндпоинты вроде `/api/projects/{id}/endpoints`, которых в коде нет. `README.md` и этот файл актуальны.
+3. **Нет базы данных** — несмотря на упоминание JPA/H2 в старой документации, в `pom.xml` нет `spring-boot-starter-data-jpa` и H2. Все данные живут в GitLab.
+4. **Frontend-сборка**: `npm run build` завершается успешно, но выдаёт предупреждение о размере JS-чанка (>500 kB, в основном из-за swagger-ui). Косметическое, функциональность не нарушается.
+5. **Сохранение на GitLab** требует валидного PAT (scope `api`) и прав на проект. При ошибках GitLab фронтенд показывает текст ошибки под кнопкой «Сохранить на GitLab».
+6. **Slug как ID**: после создания проекта изменить его идентификатор (имя папки) через UI нельзя — только переименованием файла в GitLab.
+7. **Потеря данных при перезаписи**: `PUT /api/projects/{id}` перезаписывает список эндпоинтов целиком; отдельной стратегии merge нет.
 8. **`src/main/resources/scrins/`** — папка со скриншотами попала в ресурсы backend и уезжает в JAR; это не код, при желании её стоит вынести или удалить.
-9. **Поля `ProjectDTO`** `createdAt`/`updatedAt`/`githubLastCommitSha`/`githubLastPublishedAt` в DTO есть, но бэкенд их не заполняет при чтении из GitHub — рассчитывать на них в UI не стоит.
+9. **Неиспользуемые поля `ProjectDTO`**: `createdAt`/`updatedAt`/`gitLabLastCommitSha`/`gitLabLastPublishedAt` есть в DTO, но бэкенд их не заполняет при чтении из GitLab — рассчитывать на них в UI не стоит.
+10. **Миграция данных не автоматизирована**: при переходе с GitHub на GitLab существующие проекты в старом репозитории остались на месте. Переносятся вручную: скачать `{slug}/openapi.json` из GitHub и запушить в GitLab-проект с той же структурой папок.
+11. **GitLab-интеграция не покрыта тестами** — тесты охватывают только парсинг/сериализацию OpenAPI; запись/чтение/удаление файлов проверяйте вручную с реальным токеном.

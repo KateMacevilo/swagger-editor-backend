@@ -6,8 +6,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.client.RestTemplate;
 
 @Configuration
-@EnableConfigurationProperties(GitHubProperties.class)
-public class GitHubConfig {
+@EnableConfigurationProperties(GitLabProperties.class)
+public class GitLabConfig {
 
     @Bean
     public RestTemplate restTemplate() {

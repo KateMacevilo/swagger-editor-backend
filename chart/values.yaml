@@ -61,19 +61,18 @@ tolerations: []
 
 affinity: {}
 
-# GitHub integration settings. These are NOT secrets and can be kept here.
-github:
-  owner: ""
-  repo: ""
+# GitLab integration settings. These are NOT secrets and can be kept here.
+gitlab:
+  project: ""        # namespace path, e.g. my-group/my-project
   branch: "main"
+  url: "https://gitlab.com"   # change for a self-hosted GitLab instance
 
-# GitHub Personal Access Token. This is a SECRET.
+# GitLab Personal Access Token (scope: api). This is a SECRET.
 # Leave empty in this file and provide it during installation, for example:
 #   helm install swagger-editor ./chart -f values-local.yaml
 # where values-local.yaml contains:
-#   github:
-#     token: "ghp_xxxxxxxxxxxxxxxxxxxx"
-githubToken: ""
+#   gitlabToken: "glpat-xxxxxxxxxxxxxxxxxxxx"
+gitlabToken: ""
 
 # Spring Boot configuration (non-sensitive).
 serverPort: 8080

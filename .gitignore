@@ -40,3 +40,9 @@ chart/*/values-override.yaml
 # Docker image export for offline transfer
 swagger-editor-image.tar.gz
 *.tar.gz
+
+# Frontend build artifacts copied into the backend for packaging (rebuilt by npm run build)
+src/main/resources/static/
+
+# Screenshots (not code; would otherwise end up packaged in the JAR)
+src/main/resources/scrins/

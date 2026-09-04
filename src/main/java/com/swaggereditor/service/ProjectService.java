@@ -26,11 +26,11 @@ public class ProjectService {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectService.class);
 
-    private final GitHubService gitHubService;
+    private final GitLabService gitLabService;
     private final OpenApiService openApiService;
 
     public List<ProjectSummaryDTO> findAll() {
-        List<Map<String, Object>> entries = gitHubService.listDirectory("");
+        List<Map<String, Object>> entries = gitLabService.listDirectory("");
         if (entries.isEmpty()) {
             return Collections.emptyList();
         }
@@ -72,7 +72,7 @@ public class ProjectService {
     private ProjectSummaryDTO loadProjectSummary(String name) {
         String filePath = name + "/openapi.json";
         try {
-            String content = gitHubService.readFile(filePath);
+            String content = gitLabService.readFile(filePath);
             ProjectDTO project = openApiService.parseSpec(content);
             return new ProjectSummaryDTO(
                     name,
@@ -91,13 +91,13 @@ public class ProjectService {
         String filePath = projectId + "/openapi.json";
         String content;
         try {
-            content = gitHubService.readFile(filePath);
+            content = gitLabService.readFile(filePath);
         } catch (HttpClientErrorException.NotFound e) {
             throw new NoSuchElementException("Project not found: " + projectId);
         }
         ProjectDTO project = openApiService.parseSpec(content);
         project.setId(projectId);
-        project.setGithubFilePath(filePath);
+        project.setGitLabFilePath(filePath);
         return project;
     }
 
@@ -111,7 +111,7 @@ public class ProjectService {
             dto.setEndpoints(List.of());
         }
         String json = openApiService.toJson(dto);
-        gitHubService.writeFile(filePath, json, "Create project \"" + dto.getTitle() + "\"");
+        gitLabService.writeFile(filePath, json, "Create project \"" + dto.getTitle() + "\"");
         return new ProjectSummaryDTO(slug, dto.getTitle(), dto.getVersion(), filePath, dto.getEndpoints().size());
     }
 
@@ -119,13 +119,13 @@ public class ProjectService {
         String filePath = projectId + "/openapi.json";
         dto.setEndpoints(dto.getEndpoints() != null ? dto.getEndpoints() : List.of());
         String json = openApiService.toJson(dto);
-        gitHubService.writeFile(filePath, json, "Update project \"" + dto.getTitle() + "\"");
+        gitLabService.writeFile(filePath, json, "Update project \"" + dto.getTitle() + "\"");
         return new ProjectSummaryDTO(projectId, dto.getTitle(), dto.getVersion(), filePath, dto.getEndpoints().size());
     }
 
     public void delete(String projectId) {
         String filePath = projectId + "/openapi.json";
-        gitHubService.deleteFile(filePath, "Delete project " + projectId);
+        gitLabService.deleteFile(filePath, "Delete project " + projectId);
     }
 
     public ProjectSummaryDTO importSpec(String specContent) {
@@ -133,7 +133,7 @@ public class ProjectService {
         String slug = openApiService.toSlug(project.getTitle());
         String filePath = slug + "/openapi.json";
         String json = openApiService.toJson(project);
-        gitHubService.writeFile(filePath, json, "Import project \"" + project.getTitle() + "\"");
+        gitLabService.writeFile(filePath, json, "Import project \"" + project.getTitle() + "\"");
         return new ProjectSummaryDTO(slug, project.getTitle(), project.getVersion(), filePath, project.getEndpointCount());
     }
 }

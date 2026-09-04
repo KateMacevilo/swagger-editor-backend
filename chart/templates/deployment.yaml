@@ -41,7 +41,7 @@ spec:
             - configMapRef:
                 name: {{ include "swagger-editor-backend.fullname" . }}-config
             - secretRef:
-                name: {{ include "swagger-editor-backend.fullname" . }}-github
+                name: {{ include "swagger-editor-backend.fullname" . }}-gitlab
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- with .Values.nodeSelector }}

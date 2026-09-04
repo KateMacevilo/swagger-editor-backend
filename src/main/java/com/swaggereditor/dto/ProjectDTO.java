@@ -25,7 +25,7 @@ public class ProjectDTO {
     private List<EndpointDTO> endpoints;
     private int endpointCount;
 
-    private String githubFilePath;
-    private String githubLastCommitSha;
-    private LocalDateTime githubLastPublishedAt;
+    private String gitLabFilePath;
+    private String gitLabLastCommitSha;
+    private LocalDateTime gitLabLastPublishedAt;
 }

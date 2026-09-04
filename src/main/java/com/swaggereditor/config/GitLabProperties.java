@@ -3,22 +3,30 @@ package com.swaggereditor.config;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
-@ConfigurationProperties(prefix = "github")
-public record GitHubProperties(
+@ConfigurationProperties(prefix = "gitlab")
+public record GitLabProperties(
         String token,
-        String owner,
-        String repo,
-        String branch
+        String project,
+        String branch,
+        String url
 ) {
 
     @ConstructorBinding
-    public GitHubProperties {
+    public GitLabProperties {
         if (branch == null || branch.isBlank()) {
             branch = "main";
         }
+        if (url == null || url.isBlank()) {
+            url = "https://gitlab.com";
+        }
+        url = url.trim().replaceAll("/+$", "");
     }
 
     public String branch() {
         return branch;
+    }
+
+    public String url() {
+        return url;
     }
 }

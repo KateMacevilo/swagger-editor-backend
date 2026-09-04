@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.UnknownContentTypeException;
 
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
@@ -58,7 +59,9 @@ public class GitLabService {
             return result;
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
-                log.warn("GitLab directory not found: {}", url);
+                // GitLab answers "404 Project Not Found" when the path is wrong OR the
+                // token's user has no access to a private project.
+                log.warn("GitLab directory not found: {} (check gitlab.project path and that the token has access)", url);
                 return Collections.emptyList();
             }
             throw e;
@@ -175,6 +178,20 @@ public class GitLabService {
         }
     }
 
+    /** JSON endpoints must answer JSON; a text/html body means an SSO/proxy page, not GitLab API data. */
+    private void assertJsonIfExpected(String url, HttpMethod method, Class<?> responseType, ResponseEntity<?> response) {
+        boolean expectsJson = Map.class.equals(responseType) || List.class.equals(responseType);
+        if (!expectsJson) return;
+        MediaType contentType = response.getHeaders().getContentType();
+        if (contentType == null || !contentType.includes(MediaType.APPLICATION_JSON)) {
+            log.warn("GitLab {} {} returned non-JSON Content-Type: {}", method, url, contentType);
+            throw new IllegalStateException(
+                    "GitLab answered with " + contentType + " instead of JSON for " + method + " " + url
+                            + " (usually an SSO login page or a reverse-proxy error page). "
+                            + "Check gitlab.url and that GITLAB_TOKEN is valid.");
+        }
+    }
+
     private <T> ResponseEntity<T> executeGitLabRequest(String url, HttpMethod method, Object body, Class<T> responseType) {
         HttpHeaders headers = new HttpHeaders();
         headers.set("PRIVATE-TOKEN", properties.token());
@@ -189,8 +206,15 @@ public class GitLabService {
 
         try {
             ResponseEntity<T> response = restTemplate.exchange(url, method, entity, responseType);
+            assertJsonIfExpected(url, method, responseType, response);
             log.debug("GitLab {} {} -> {}", method, url, response.getStatusCode());
             return response;
+        } catch (UnknownContentTypeException e) {
+            // e.g. GitLab behind SSO/reverse proxy answered an HTML login/error page
+            log.warn("GitLab {} {} returned an unexpected content type: {}", method, url, e.getContentType());
+            throw new IllegalStateException(
+                    "GitLab answered with " + e.getContentType() + " instead of JSON (usually an SSO login page "
+                            + "or a reverse-proxy error page). Check gitlab.url and that GITLAB_TOKEN is valid.", e);
         } catch (HttpClientErrorException e) {
             if (e.getStatusCode() == HttpStatus.NOT_FOUND) {
                 log.debug("GitLab 404 (expected): {} {} -> {}", method, url, e.getResponseBodyAsString());

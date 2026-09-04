@@ -47,3 +47,6 @@ src/main/resources/static/
 # Screenshots (not code; would otherwise end up packaged in the JAR)
 src/main/resources/scrins/
 error/
+
+# keep local
+Dockerfile.testR

@@ -1,0 +1,27 @@
+# Convenience compose for the frontend dev server in Docker.
+# On machines without a working local Node.js — all dependencies are fetched
+# and run inside the container.
+#
+#   docker compose up --build frontend      # http://localhost:5173
+#
+# Backend URL the dev server proxies /api to:
+#   - backend on the same host machine (default): host.docker.internal works out of the box
+#   - backend in a container on this network: VITE_API_TARGET=http://backend:8080
+
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      # host.docker.internal reaches the host machine (where the backend runs).
+      VITE_API_TARGET: ${VITE_API_TARGET:-http://host.docker.internal:8080}
+    volumes:
+      # live code editing: sources from the host, dependencies from the image
+      - ./frontend/src:/app/src:ro
+      - ./frontend/index.html:/app/index.html:ro
+      - ./frontend/vite.config.js:/app/vite.config.js:ro
+      - frontend-node-modules:/app/node_modules
+
+volumes:
+  frontend-node-modules:

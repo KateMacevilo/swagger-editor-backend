@@ -17,8 +17,10 @@ import io.swagger.v3.oas.models.parameters.Parameter;
 import io.swagger.v3.oas.models.parameters.RequestBody;
 import io.swagger.v3.oas.models.responses.ApiResponse;
 import io.swagger.v3.oas.models.responses.ApiResponses;
+import io.swagger.v3.oas.models.security.*;
 import io.swagger.v3.oas.models.servers.Server;
 import io.swagger.v3.parser.OpenAPIV3Parser;
+import io.swagger.v3.parser.converter.SwaggerConverter;
 import io.swagger.v3.parser.core.models.ParseOptions;
 import io.swagger.v3.parser.core.models.SwaggerParseResult;
 import org.springframework.stereotype.Service;
@@ -34,17 +36,27 @@ public class OpenApiService {
     public ProjectDTO parseSpec(String specContent) {
         OpenAPIV3Parser parser = new OpenAPIV3Parser();
         ParseOptions options = new ParseOptions();
-        // Resolve fully so that internal $ref schemas are inlined into DTOs;
-        // otherwise request/response bodies referencing components collapse to {}.
-        options.setResolveFully(true);
+        // Keep $refs intact: component schemas go into ProjectDTO.schemas and bodies
+        // reference them via {"$ref": "#/components/schemas/<name>"}. Resolving refs
+        // fully would duplicate the same schema into every endpoint.
+        options.setResolveFully(false);
 
         SwaggerParseResult result = parser.readContents(specContent, null, options);
+        if (result.getOpenAPI() == null && isSwaggerV2(specContent)) {
+            // Swagger 2.0 spec: the v3 parser rejects it, convert it to OpenAPI 3 first.
+            result = new SwaggerConverter().readContents(specContent, null, options);
+        }
         if (result.getOpenAPI() == null) {
             String errors = result.getMessages() != null ? String.join("; ", result.getMessages()) : "unknown";
             throw new IllegalArgumentException("Invalid OpenAPI spec: " + errors);
         }
 
         return toProjectDTO(result.getOpenAPI());
+    }
+
+    private boolean isSwaggerV2(String specContent) {
+        String head = specContent != null ? specContent.substring(0, Math.min(specContent.length(), 2000)) : "";
+        return head.contains("\"swagger\"") || head.contains("swagger:") || head.contains("swagger :");
     }
 
     /** Convert an OpenAPI object to a ProjectDTO. */
@@ -82,6 +94,35 @@ public class OpenApiService {
         }
         project.setEndpoints(endpoints);
         project.setEndpointCount(endpoints.size());
+
+        if (openAPI.getComponents() != null && openAPI.getComponents().getSchemas() != null
+                && !openAPI.getComponents().getSchemas().isEmpty()) {
+            Map<String, String> schemas = new LinkedHashMap<>();
+            for (Map.Entry<String, Schema> entry : openAPI.getComponents().getSchemas().entrySet()) {
+                schemas.put(entry.getKey(), schemaToJsonString(entry.getValue()));
+            }
+            project.setSchemas(schemas);
+        }
+        if (openAPI.getComponents() != null && openAPI.getComponents().getSecuritySchemes() != null) {
+            openAPI.getComponents().getSecuritySchemes().values().stream().findFirst().ifPresent(scheme -> {
+                OAuthFlow flow = scheme.getFlows() != null ? scheme.getFlows().getImplicit() : null;
+                if (flow == null && scheme.getFlows() != null) {
+                    // Take whichever flow is configured (authorizationCode, password, clientCredentials).
+                    flow = scheme.getFlows().getAuthorizationCode() != null ? scheme.getFlows().getAuthorizationCode()
+                            : scheme.getFlows().getPassword() != null ? scheme.getFlows().getPassword()
+                            : scheme.getFlows().getClientCredentials();
+                }
+                if (flow != null) {
+                    project.setSecurityAuthorizationUrl(flow.getAuthorizationUrl());
+                    if (flow.getScopes() != null) {
+                        project.setSecurityScopes(new LinkedHashMap<>(flow.getScopes()));
+                    }
+                }
+            });
+        }
+        if (openAPI.getSecurity() != null && !openAPI.getSecurity().isEmpty()) {
+            project.setSecurityEnabled(true);
+        }
         return project;
     }
 
@@ -149,6 +190,34 @@ public class OpenApiService {
             }
         }
         openAPI.setPaths(paths);
+
+        if (project.getSchemas() != null && !project.getSchemas().isEmpty()) {
+            Components components = openAPI.getComponents() != null ? openAPI.getComponents() : new Components();
+            for (Map.Entry<String, String> entry : project.getSchemas().entrySet()) {
+                components.addSchemas(entry.getKey(), jsonStringToSchema(entry.getValue()));
+            }
+            openAPI.setComponents(components);
+        }
+
+        boolean schemeConfigured = (project.getSecurityAuthorizationUrl() != null && !project.getSecurityAuthorizationUrl().isBlank())
+                || (project.getSecurityScopes() != null && !project.getSecurityScopes().isEmpty());
+        if (schemeConfigured) {
+            Scopes scopes = new Scopes();
+            if (project.getSecurityScopes() != null) {
+                project.getSecurityScopes().forEach(scopes::addString);
+            }
+            SecurityScheme scheme = new SecurityScheme()
+                    .type(SecurityScheme.Type.OAUTH2)
+                    .flows(new OAuthFlows().implicit(new OAuthFlow()
+                            .authorizationUrl(project.getSecurityAuthorizationUrl())
+                            .scopes(scopes)));
+            Components components = openAPI.getComponents() != null ? openAPI.getComponents() : new Components();
+            components.addSecuritySchemes("default", scheme);
+            openAPI.setComponents(components);
+        }
+        if (Boolean.TRUE.equals(project.getSecurityEnabled())) {
+            openAPI.setSecurity(List.of(new SecurityRequirement().addList("default")));
+        }
         return openAPI;
     }
 
@@ -172,6 +241,9 @@ public class OpenApiService {
         if (endpoint.getDescription() != null) operation.setDescription(endpoint.getDescription());
         if (endpoint.getOperationId() != null) operation.setOperationId(endpoint.getOperationId());
         if (Boolean.TRUE.equals(endpoint.getDeprecated())) operation.setDeprecated(true);
+        if (Boolean.TRUE.equals(endpoint.getSecured())) {
+            operation.addSecurityItem(new SecurityRequirement().addList("default"));
+        }
         if (endpoint.getTags() != null && !endpoint.getTags().isEmpty()) {
             operation.setTags(endpoint.getTags());
         }
@@ -242,6 +314,7 @@ public class OpenApiService {
             endpoint.setDescription(operation.getDescription());
             endpoint.setOperationId(operation.getOperationId());
             endpoint.setDeprecated(Boolean.TRUE.equals(operation.getDeprecated()));
+            endpoint.setSecured(operation.getSecurity() != null && !operation.getSecurity().isEmpty());
             if (operation.getTags() != null) {
                 endpoint.setTags(new ArrayList<>(operation.getTags()));
             }
@@ -266,11 +339,9 @@ public class OpenApiService {
             if (operation.getRequestBody() != null) {
                 RequestBody rb = operation.getRequestBody();
                 endpoint.setRequestBodyRequired(Boolean.TRUE.equals(rb.getRequired()));
-                if (rb.getContent() != null && rb.getContent().containsKey("application/json")) {
-                    Schema<?> schema = rb.getContent().get("application/json").getSchema();
-                    if (schema != null) {
-                        endpoint.setRequestBodySchema(schemaToJsonString(schema));
-                    }
+                Schema<?> schema = extractBodySchema(rb.getContent());
+                if (schema != null) {
+                    endpoint.setRequestBodySchema(schemaToJsonString(schema));
                 }
             }
 
@@ -281,11 +352,9 @@ public class OpenApiService {
                     ApiResponseDTO resp = new ApiResponseDTO();
                     resp.setStatusCode(respEntry.getKey());
                     resp.setDescription(apiResponse.getDescription());
-                    if (apiResponse.getContent() != null && apiResponse.getContent().containsKey("application/json")) {
-                        Schema<?> schema = apiResponse.getContent().get("application/json").getSchema();
-                        if (schema != null) {
-                            resp.setBodySchema(schemaToJsonString(schema));
-                        }
+                    Schema<?> schema = extractBodySchema(apiResponse.getContent());
+                    if (schema != null) {
+                        resp.setBodySchema(schemaToJsonString(schema));
                     }
                     responses.add(resp);
                 }
@@ -316,6 +385,33 @@ public class OpenApiService {
         return schema;
     }
 
+    /**
+     * Pick the body schema from a content map: exactly application/json first
+     * (tolerating parameters like "application/json; charset=UTF-8"), then any
+     * JSON media type, then the first entry at all.
+     */
+    private Schema<?> extractBodySchema(Content content) {
+        if (content == null || content.isEmpty()) {
+            return null;
+        }
+        for (Map.Entry<String, MediaType> entry : content.entrySet()) {
+            if ("application/json".equalsIgnoreCase(baseMediaType(entry.getKey()))) {
+                return entry.getValue().getSchema();
+            }
+        }
+        for (Map.Entry<String, MediaType> entry : content.entrySet()) {
+            if (baseMediaType(entry.getKey()).toLowerCase().contains("json")) {
+                return entry.getValue().getSchema();
+            }
+        }
+        return content.values().iterator().next().getSchema();
+    }
+
+    private String baseMediaType(String mediaType) {
+        int idx = mediaType.indexOf(';');
+        return (idx >= 0 ? mediaType.substring(0, idx) : mediaType).trim();
+    }
+
     @SuppressWarnings("unchecked")
     private Schema<?> jsonStringToSchema(String json) {
         if (json == null || json.isBlank()) return new ObjectSchema();
@@ -330,6 +426,11 @@ public class OpenApiService {
     @SuppressWarnings("unchecked")
     private Schema<?> mapToSchema(Map<String, Object> map) {
         if (map == null) return new ObjectSchema();
+        if (map.containsKey("$ref")) {
+            Schema<?> ref = new Schema<>();
+            ref.set$ref((String) map.get("$ref"));
+            return ref;
+        }
         String type = (String) map.getOrDefault("type", "object");
         Schema<?> schema;
         switch (type) {
@@ -412,6 +513,10 @@ public class OpenApiService {
     @SuppressWarnings("unchecked")
     private Map<String, Object> schemaToMap(Schema<?> schema) {
         Map<String, Object> map = new LinkedHashMap<>();
+        if (schema.get$ref() != null) {
+            map.put("$ref", schema.get$ref());
+            return map;
+        }
         if (schema.getType() != null) map.put("type", schema.getType());
         if (schema.getFormat() != null) map.put("format", schema.getFormat());
         if (schema.getDescription() != null) map.put("description", schema.getDescription());

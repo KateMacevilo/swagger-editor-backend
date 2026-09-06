@@ -52,20 +52,84 @@ class ImportRoundTripTest {
     }
 
     @Test
-    void refRequestBodyIsResolvedAndExamplesKept() throws Exception {
+    void refRequestBodyIsKeptAsComponentRefWithExamples() throws Exception {
         ProjectDTO project = parseOpenBankingSpec();
         EndpointDTO ep = project.getEndpoints().stream()
                 .filter(e -> e.getPath().equals("/payments/requirement"))
                 .findFirst()
                 .orElseThrow();
 
+        // With ref preservation the body is a reference, not an inlined schema.
         String body = ep.getRequestBodySchema();
         assertNotNull(body, "request body schema must be present");
-        assertNotEquals("{}", body, "$ref request body must be resolved, not empty");
-        assertTrue(body.contains("\"example\""), "property examples must be kept in request body schema");
+        assertTrue(body.contains("\"$ref\""), "request body must be a component reference, got: " + body);
+        assertTrue(body.contains("#/components/schemas/CreateRequirementPaymentsRequest"));
+
+        // The referenced component must be stored in the project; nested refs stay refs.
+        assertNotNull(project.getSchemas(), "components must be extracted");
+        String component = project.getSchemas().get("CreateRequirementPaymentsRequest");
+        assertNotNull(component, "CreateRequirementPaymentsRequest component must be stored");
+        assertTrue(component.contains("#/components/schemas/RequirementRequest"),
+                "nested component reference must be kept, got: " + component);
+
+        // Components with property examples must keep them (e.g. Error400).
+        assertTrue(project.getSchemas().values().stream().anyMatch(s -> s.contains("\"example\"")),
+                "at least one component must keep its examples");
 
         String regenerated = service.toJson(project);
+        assertTrue(regenerated.contains("#/components/schemas/CreateRequirementPaymentsRequest"));
         assertTrue(regenerated.contains("\"example\""), "regenerated spec must contain examples");
+    }
+
+    @Test
+    void responseBodyWithParameterizedJsonContentTypeIsRead() {
+        // Some specs (e.g. converted Swagger 2.0) use "application/json; charset=UTF-8"
+        // as the content key — the schema must still be picked up.
+        String spec = """
+                {
+                  "openapi": "3.0.0",
+                  "info": {"title": "t", "version": "1"},
+                  "paths": {
+                    "/regions": {
+                      "get": {
+                        "summary": "s",
+                        "responses": {
+                          "200": {
+                            "description": "OK",
+                            "content": {
+                              "application/json; charset=UTF-8": {
+                                "schema": {"$ref": "#/components/schemas/ResponseRegion"}
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "components": {
+                    "schemas": {
+                      "ResponseRegion": {
+                        "type": "object",
+                        "properties": {"data": {"type": "string"}},
+                        "required": ["data"]
+                      }
+                    }
+                  }
+                }
+                """;
+        ProjectDTO project = service.parseSpec(spec);
+        EndpointDTO ep = project.getEndpoints().get(0);
+
+        String body = ep.getResponses().get(0).getBodySchema();
+        assertNotNull(body, "response body schema must be read despite charset in content type");
+        assertTrue(body.contains("#/components/schemas/ResponseRegion"), "got: " + body);
+
+        assertNotNull(project.getSchemas());
+        assertTrue(project.getSchemas().containsKey("ResponseRegion"));
+
+        String regenerated = service.toJson(project);
+        assertTrue(regenerated.contains("\"components\""), "regenerated spec must have components");
+        assertTrue(regenerated.contains("#/components/schemas/ResponseRegion"));
     }
 
     @Test
@@ -76,5 +140,93 @@ class ImportRoundTripTest {
         assertTrue(regenerated.contains("maxLength"), "maxLength must survive");
         assertTrue(regenerated.contains("pattern"), "pattern must survive");
         assertTrue(regenerated.contains("Создание платежа"), "Cyrillic summary must survive");
+    }
+
+    @Test
+    void securitySchemeAndRequirementSurviveRoundTrip() {
+        // Mirrors the SwaggerConfiguration of the original java project:
+        // components.securitySchemes.default (oauth2 implicit) + security on operations/root.
+        String spec = """
+                {
+                  "openapi": "3.0.0",
+                  "info": {"title": "t", "version": "1"},
+                  "paths": {
+                    "/a": {
+                      "get": {
+                        "summary": "s",
+                        "security": [{"default": []}],
+                        "responses": {"200": {"description": "OK"}}
+                      }
+                    }
+                  },
+                  "security": [{"default": []}],
+                  "components": {
+                    "securitySchemes": {
+                      "default": {
+                        "type": "oauth2",
+                        "flows": {
+                          "implicit": {
+                            "authorizationUrl": "https://test.com",
+                            "scopes": {
+                              "accounts": "Получение информации о счетах",
+                              "payments": "Инициирование платежей"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """;
+        ProjectDTO project = service.parseSpec(spec);
+
+        assertTrue(project.getSecurityEnabled());
+        assertEquals("https://test.com", project.getSecurityAuthorizationUrl());
+        assertTrue(project.getSecurityScopes().containsKey("accounts"));
+        assertTrue(project.getSecurityScopes().containsKey("payments"));
+        assertTrue(project.getEndpoints().get(0).getSecured());
+
+        String regenerated = service.toJson(project);
+        assertTrue(regenerated.contains("securitySchemes"));
+        assertTrue(regenerated.contains("https://test.com"));
+        assertTrue(regenerated.contains("Инициирование платежей"));
+        assertTrue(regenerated.contains("\"security\""));
+    }
+
+    @Test
+    void swaggerV2SpecIsConvertedToOpenApi3() {
+        // Legacy Swagger 2.0 files ("swagger":"2.0") are rejected by OpenAPIV3Parser
+        // and must go through SwaggerConverter first.
+        String spec = """
+                {
+                  "swagger": "2.0",
+                  "info": {"title": "ReferenceData", "version": "v1", "description": "test"},
+                  "host": "api.example.com",
+                  "basePath": "/ref/v1",
+                  "paths": {
+                    "/dicts": {
+                      "get": {
+                        "summary": "Get dictionaries",
+                        "responses": {"200": {"description": "OK"}}
+                      }
+                    }
+                  }
+                }
+                """;
+        ProjectDTO project = service.parseSpec(spec);
+
+        assertEquals("ReferenceData", project.getTitle());
+        assertEquals("v1", project.getVersion());
+        assertEquals(1, project.getEndpoints().size());
+        EndpointDTO ep = project.getEndpoints().get(0);
+        assertEquals("/dicts", ep.getPath());
+        assertEquals("GET", ep.getMethod());
+        assertEquals("Get dictionaries", ep.getSummary());
+        assertTrue(project.getServerUrl() != null && project.getServerUrl().contains("api.example.com"),
+                "host must be converted to a server URL, got: " + project.getServerUrl());
+
+        String regenerated = service.toJson(project);
+        assertTrue(regenerated.contains("\"openapi\""), "regenerated spec must be OpenAPI 3");
+        assertFalse(regenerated.contains("\"swagger\""), "regenerated spec must not stay Swagger 2.0");
     }
 }

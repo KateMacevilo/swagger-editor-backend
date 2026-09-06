@@ -22,6 +22,8 @@ public class EndpointDTO {
     private List<String> tags;
     private String operationId;
     private Boolean deprecated = false;
+    /** Whether this endpoint requires the project's OAuth2 security scheme. */
+    private Boolean secured = false;
 
     private String requestBodySchema;
     private Boolean requestBodyRequired = false;

@@ -19,7 +19,7 @@ const METHOD_COLORS = {
 
 const EMPTY_ENDPOINT = {
   path: '', method: 'GET', summary: '', description: '',
-  tags: [], operationId: '', deprecated: false,
+  tags: [], operationId: '', deprecated: false, secured: false,
   requestBodySchema: '', requestBodyRequired: false,
   parameters: [], responses: []
 }
@@ -44,6 +44,7 @@ export default function EditorPage() {
   const [loadingSpec, setLoadingSpec] = useState(false)
   const [showProjectEdit, setShowProjectEdit] = useState(false)
   const [projectForm, setProjectForm] = useState(DEFAULT_PROJECT)
+  const [showComponents, setShowComponents] = useState(false)
 
   const debounceRef = useRef(null)
 
@@ -96,6 +97,10 @@ export default function EditorPage() {
     setProject(prev => ({ ...prev, endpoints: updater(prev.endpoints || []) }))
   }
 
+  function updateSchemas(schemas) {
+    setProject(prev => ({ ...prev, schemas }))
+  }
+
   async function handleSaveEndpoint(e) {
     e.preventDefault()
     if (!form.path || !form.method) return
@@ -121,7 +126,7 @@ export default function EditorPage() {
   }
 
   async function handleSaveProject() {
-    const updated = { ...projectForm, endpoints: project.endpoints }
+    const updated = { ...project, ...projectForm, endpoints: project.endpoints, schemas: project.schemas }
     setSaving(true)
     setSaveError(null)
     try {
@@ -225,6 +230,10 @@ export default function EditorPage() {
             className="w-full py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition">JSON</button>
           <button onClick={downloadYaml}
             className="w-full py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition">YAML</button>
+          <button onClick={() => setShowComponents(true)}
+            className="w-full py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+            Компоненты схем ({Object.keys(project.schemas || {}).length})
+          </button>
         </div>
       </aside>
 
@@ -292,6 +301,13 @@ export default function EditorPage() {
                   onChange={e => setForm({ ...form, deprecated: e.target.checked })} />
                 <label htmlFor="deprecated" className="text-sm text-gray-600">Deprecated</label>
               </div>
+              <div className="flex items-center gap-2 mt-4">
+                <input type="checkbox" id="secured" checked={form.secured || false}
+                  onChange={e => setForm({ ...form, secured: e.target.checked })} />
+                <label htmlFor="secured" className="text-sm text-gray-600" title="operation.security: [{default: []}] — эндпоинт требует OAuth2-авторизацию">
+                  Требует авторизации
+                </label>
+              </div>
             </div>
 
             <div className="border-b border-gray-200">
@@ -325,13 +341,17 @@ export default function EditorPage() {
                   <span className="text-xs text-gray-400">Content-Type: application/json</span>
                 </div>
                 <SchemaBuilder value={form.requestBodySchema}
-                  onChange={v => setForm({ ...form, requestBodySchema: v })} />
+                  onChange={v => setForm({ ...form, requestBodySchema: v })}
+                  schemas={project.schemas}
+                  onSchemasChange={updateSchemas} />
               </div>
             )}
 
             {activeTab === 'responses' && (
               <ResponseBuilder responses={form.responses || []}
-                onChange={responses => setForm({ ...form, responses })} />
+                onChange={responses => setForm({ ...form, responses })}
+                schemas={project.schemas}
+                onSchemasChange={updateSchemas} />
             )}
 
             <div className="flex gap-3 pt-2">
@@ -366,8 +386,10 @@ export default function EditorPage() {
 
       {/* Project Edit Modal */}
       {showProjectEdit && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg space-y-3">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={() => setShowProjectEdit(false)}>
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto space-y-3"
+            onClick={e => e.stopPropagation()}>
             <h2 className="text-lg font-semibold">Настройки проекта</h2>
             {[
               ['Название', 'title', true],
@@ -387,6 +409,27 @@ export default function EditorPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
               </div>
             ))}
+
+            <div className="border-t border-gray-200 pt-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={projectForm.securityEnabled || false}
+                  onChange={e => setProjectForm({ ...projectForm, securityEnabled: e.target.checked })} />
+                OAuth2-авторизация (securitySchemes.default)
+              </label>
+              <p className="text-[11px] text-gray-400">
+                Включает глобальный security для спецификации и кнопку Authorize в Swagger UI.
+                На отдельных эндпоинтах требование можно переопределить чекбоксом «Требует авторизации».
+              </p>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Authorization URL</label>
+                <input value={projectForm.securityAuthorizationUrl || ''}
+                  onChange={e => setProjectForm({ ...projectForm, securityAuthorizationUrl: e.target.value })}
+                  placeholder="https://test.com"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <ScopesEditor scopes={projectForm.securityScopes}
+                onChange={scopes => setProjectForm({ ...projectForm, securityScopes: scopes })} />
+            </div>
             <div className="flex gap-3 pt-2">
               <button onClick={handleSaveProject}
                 className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
@@ -398,6 +441,123 @@ export default function EditorPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+      {/* Components Modal */}
+      {showComponents && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
+          onClick={() => setShowComponents(false)}>
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto space-y-3"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Компоненты схем ({Object.keys(project.schemas || {}).length})</h2>
+              <button onClick={() => setShowComponents(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            {Object.keys(project.schemas || {}).length === 0 && (
+              <p className="text-sm text-gray-400">
+                Компонентов пока нет. Они появляются при импорте спецификации со ссылками $ref
+                или через «сохранить как компонент» в редакторе схемы.
+              </p>
+            )}
+            {Object.entries(project.schemas || {}).map(([name, json]) => (
+              <ComponentRow key={name} name={name} json={json}
+                schemas={project.schemas}
+                onSchemasChange={updateSchemas}
+                onDelete={() => {
+                  if (!confirm(`Удалить компонент «${name}»? Эндпоинты со ссылкой на него сохранят $ref, но схема станет недоступна.`)) return
+                  const next = { ...project.schemas }
+                  delete next[name]
+                  updateSchemas(next)
+                }} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Edits OAuth2 scopes as a list of name/description pairs (stored as a map). */
+function ScopesEditor({ scopes, onChange }) {
+  const pairs = Object.entries(scopes || {})
+
+  function updatePair(idx, field, val) {
+    const next = [...pairs]
+    next[idx] = [field === 'name' ? val : next[idx][0], field === 'description' ? val : next[idx][1]]
+    onChange(Object.fromEntries(next.filter(([n]) => n)))
+  }
+
+  function addPair() {
+    let name = `scope${pairs.length + 1}`
+    let i = pairs.length + 1
+    while (name in (scopes || {})) name = `scope${++i}`
+    onChange({ ...(scopes || {}), [name]: '' })
+  }
+
+  function removePair(name) {
+    const next = { ...(scopes || {}) }
+    delete next[name]
+    onChange(next)
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <label className="text-xs font-medium text-gray-600">Scopes</label>
+        <button type="button" onClick={addPair}
+          className="text-xs text-blue-600 hover:underline">+ добавить scope</button>
+      </div>
+      {pairs.length === 0 && <p className="text-[11px] text-gray-400">Нет scopes</p>}
+      {pairs.map(([name, description], idx) => (
+        <div key={idx} className="flex items-center gap-2 mb-1">
+          <input value={name} onChange={e => updatePair(idx, 'name', e.target.value)}
+            placeholder="accounts"
+            className="w-32 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400" />
+          <input value={description} onChange={e => updatePair(idx, 'description', e.target.value)}
+            placeholder="Описание scope"
+            className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+          <button type="button" onClick={() => removePair(name)}
+            className="text-red-400 hover:text-red-600 text-xs px-1">✕</button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** One component entry: name, short summary, expandable editor, delete. */
+function ComponentRow({ name, json, schemas, onSchemasChange, onDelete }) {
+  const [expanded, setExpanded] = useState(false)
+
+  let summary = 'схема'
+  try {
+    const parsed = JSON.parse(json)
+    if (parsed.$ref) summary = 'ссылка'
+    else {
+      const props = Object.keys(parsed.properties || {}).length
+      summary = `${parsed.type || 'object'} · ${props} ${props === 1 ? 'поле' : 'полей'}`
+    }
+  } catch {}
+
+  return (
+    <div className="border border-gray-200 rounded-lg p-3 bg-gray-50">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-sm text-gray-800 flex-1 truncate">{name}</span>
+        <span className="text-xs text-gray-400 whitespace-nowrap">{summary}</span>
+        <button type="button" onClick={() => setExpanded(!expanded)}
+          className="text-xs text-blue-600 hover:underline whitespace-nowrap">
+          {expanded ? 'Свернуть' : 'Открыть'}
+        </button>
+        <button type="button" onClick={onDelete}
+          className="text-xs text-red-500 hover:text-red-700 whitespace-nowrap">
+          Удалить
+        </button>
+      </div>
+      {expanded && (
+        <div className="mt-3">
+          <SchemaBuilder value={json}
+            onChange={v => onSchemasChange({ ...schemas, [name]: v })}
+            schemas={schemas}
+            onSchemasChange={onSchemasChange} />
         </div>
       )}
     </div>

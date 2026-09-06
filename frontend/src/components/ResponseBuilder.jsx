@@ -34,7 +34,7 @@ const CODE_LABELS = {
   '510': 'Not Extended', '511': 'Network Authentication Required'
 }
 
-export default function ResponseBuilder({ responses, onChange }) {
+export default function ResponseBuilder({ responses, onChange, schemas, onSchemasChange }) {
   function add() {
     onChange([...responses, { statusCode: '200', description: 'OK', bodySchema: '' }])
   }
@@ -83,6 +83,8 @@ export default function ResponseBuilder({ responses, onChange }) {
             <SchemaBuilder
               value={resp.bodySchema}
               onChange={v => update(idx, 'bodySchema', v)}
+              schemas={schemas}
+              onSchemasChange={onSchemasChange}
             />
           )}
         </div>

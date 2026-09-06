@@ -185,18 +185,54 @@ docker build -f Dockerfile.full -t swagger-editor-backend:1.0.0 .
 
 ### Развёртывание в Kubernetes через Helm
 
+**Что понадобится**
+
+- Кластер Kubernetes + настроенный `kubectl`, установленный Helm 3.
+- GitLab Personal Access Token (scope `api`) и путь проекта вида `group/project`.
+- Образ backend в registry, доступном из кластера (сборка — шаг 1).
+- (Опционально) Ingress-контроллер (nginx) для внешнего доступа по DNS-имени. Без него можно пользоваться `kubectl port-forward`.
+
+**Шаг 1. Собрать и доставить образ**
+
+В контейнере одно приложение: backend (8080) раздаёт и собранный фронтенд, поэтому нужен только образ backend.
+
+Вариант A — registry доступен из кластера (внутренний registry, GitLab Registry и т.п.):
+
 ```bash
-# 1. Собрать production JAR, собрать и запушить образ в registry (см. выше)
-# 2. Подготовить chart/values-local.yaml с секретами и локальными настройками
+# Полная сборка внутри Docker (frontend собирается в первой стадии, JAR — во второй)
+docker build -f Dockerfile.full -t <registry>/<namespace>/swagger-editor-backend:1.0.0 .
+docker push <registry>/<namespace>/swagger-editor-backend:1.0.0
+```
+
+Для приватного registry добавьте `imagePullSecrets` в values (шаг 2).
+
+Вариант B — кластер без доступа в интернет (air-gapped, например площадка заказчика):
+
+```bash
+# На машине, где есть Docker и исходники:
+docker build -f Dockerfile.full -t swagger-editor-backend:1.0.0 .
+docker save swagger-editor-backend:1.0.0 | gzip > swagger-editor-backend.tar.gz
+
+# Переносим архив на площадку и загружаем в containerd каждой ноды
+# (или в registry кластера, если он есть):
+gunzip -c swagger-editor-backend.tar.gz | ctr -n k8s.io images import -
+```
+
+В values (шаг 2) тогда: `image.repository: swagger-editor-backend`, `image.tag: "1.0.0"`, `image.pullPolicy: IfNotPresent`.
+
+**Шаг 2. Подготовить `chart/values-local.yaml`** (файл в `.gitignore`, содержит секреты):
+
+```bash
 cat > chart/values-local.yaml <<EOF
 gitlab:
-  project: <group/project>
+  project: <group/project>        # путь без https:// и без .git
   branch: main
-  url: https://gitlab.com
-gitlabToken: <PAT>
+  url: https://gitlab.com         # для self-hosted — адрес вашего инстанса
+gitlabToken: <PAT со scope api>
 image:
   repository: <registry>/<namespace>/swagger-editor-backend
   tag: "1.0.0"
+  pullPolicy: IfNotPresent
 ingress:
   enabled: true
   className: nginx
@@ -206,13 +242,43 @@ ingress:
         - path: /
           pathType: Prefix
 EOF
-
-# 3. Установить / обновить
-helm install swagger-editor ./chart -f chart/values-local.yaml
-helm upgrade swagger-editor ./chart -f chart/values-local.yaml
 ```
 
-`chart/values-local.yaml` добавлен в `.gitignore` (может содержать секреты). Шаблон `secret.yaml` обязателен: при пустом `gitlabToken` установка завершится ошибкой (`required`).
+`secret.yaml` обязателен: при пустом `gitlabToken` установка завершится ошибкой (`required`). Лимиты/requests, HPA и т.п. — см. дефолты в `chart/values.yaml`.
+
+**Шаг 3. Установка / обновление**
+
+```bash
+helm install swagger-editor-backend ./chart -f chart/values-local.yaml
+helm upgrade swagger-editor-backend ./chart -f chart/values-local.yaml
+```
+
+Релиз назовите именно `swagger-editor-backend` — тогда все ресурсы получат имя `swagger-editor-backend` (иначе имя будет `<релиз>-swagger-editor-backend`).
+
+**Шаг 4. Проверка**
+
+```bash
+kubectl get pods -l app.kubernetes.io/instance=swagger-editor-backend
+kubectl logs -l app.kubernetes.io/instance=swagger-editor-backend --tail=100
+
+# Доступ без ingress:
+kubectl port-forward svc/swagger-editor-backend 8080:8080
+# → http://localhost:8080 (UI + API в одном)
+```
+
+С открытым UI: список проектов должен подтянуться из GitLab, «Сохранить на GitLab» должен создать коммит без ошибок.
+
+**Типичные проблемы**
+
+| Симптом | Причина / решение |
+|---|---|
+| `ImagePullBackOff` | Неверный `image.repository`/tag, приватный registry без `imagePullSecrets`, в air-gapped-кластере образ не загружен на ноду |
+| 503 «GitLab integration is not configured» | Не заданы `GITLAB_TOKEN`/`GITLAB_PROJECT` (пустые `gitlabToken`/`gitlab.project` в values — secret/configmap не собрались) |
+| 404 «Project Not Found» от GitLab | Неверный `gitlab.project` (должен быть путь `group/project`, не URL и не `.git`), либо у токена нет прав на проект |
+| Долгий старт списка проектов | Норма: `findAll()` делает N+1 запросов к GitLab API (дерево + каждый `openapi.json`) |
+| Ingress 502 | Под не ready — смотреть `kubectl logs`; проверить `service.port` (8080) |
+
+Удаление: `helm uninstall swagger-editor-backend` (данные в GitLab остаются — удаляются только ресурсы в кластере).
 
 ### Тесты
 

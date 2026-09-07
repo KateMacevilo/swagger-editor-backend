@@ -8,8 +8,10 @@ function safeParse(v) {
   try { return v ? JSON.parse(v) : null } catch { return null }
 }
 
-function FieldRow({ field, onChange, onRemove, depth = 0 }) {
+function FieldRow({ field, onChange, onRemove, schemas, depth = 0 }) {
   const indent = depth * 16
+  const componentNames = Object.keys(schemas || {})
+  const refNameOf = ref => (ref || '').startsWith(REF_PREFIX) ? ref.slice(REF_PREFIX.length) : ''
 
   return (
     <div style={{ marginLeft: indent }}>
@@ -23,11 +25,22 @@ function FieldRow({ field, onChange, onRemove, depth = 0 }) {
         />
         <select
           value={field.type}
-          onChange={e => onChange({ ...field, type: e.target.value, properties: e.target.value === 'object' ? (field.properties || []) : undefined, items: e.target.value === 'array' ? (field.items || { type: 'string' }) : undefined })}
+          onChange={e => onChange({ ...field, type: e.target.value, ref: undefined, properties: e.target.value === 'object' ? (field.properties || []) : undefined, items: e.target.value === 'array' ? (field.items || { type: 'string' }) : undefined })}
           className="px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
         >
           {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+          <option value="$ref">→ ссылка ($ref)</option>
         </select>
+        {field.type === '$ref' && (
+          <select
+            value={field.ref || ''}
+            onChange={e => onChange({ ...field, ref: e.target.value })}
+            className="px-2 py-1 border border-blue-300 rounded text-xs font-mono bg-blue-50 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            <option value="">— выберите схему —</option>
+            {componentNames.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        )}
         <textarea
           value={field.description || ''}
           onChange={e => onChange({ ...field, description: e.target.value })}
@@ -57,19 +70,28 @@ function FieldRow({ field, onChange, onRemove, depth = 0 }) {
         <ObjectFields
           fields={field.properties || []}
           onChange={props => onChange({ ...field, properties: props })}
+          schemas={schemas}
           depth={depth + 1}
         />
       )}
 
       {field.type === 'array' && (
-        <div style={{ marginLeft: (depth + 1) * 16 }} className="mb-1">
-          <span className="text-xs text-gray-500 mr-2">items type:</span>
+        <div style={{ marginLeft: (depth + 1) * 16 }} className="mb-1 flex items-center gap-2">
+          <span className="text-xs text-gray-500">items:</span>
           <select
-            value={field.items?.type || 'string'}
-            onChange={e => onChange({ ...field, items: { type: e.target.value } })}
+            value={field.items?.$ref || field.items?.type || 'string'}
+            onChange={e => {
+              const v = e.target.value
+              onChange({ ...field, items: v.startsWith(REF_PREFIX) ? { $ref: v } : { type: v } })
+            }}
             className="px-2 py-1 border border-gray-300 rounded text-xs"
           >
             {TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            {componentNames.length > 0 && (
+              <optgroup label="компоненты">
+                {componentNames.map(n => <option key={n} value={REF_PREFIX + n}>{n}</option>)}
+              </optgroup>
+            )}
           </select>
         </div>
       )}
@@ -77,7 +99,7 @@ function FieldRow({ field, onChange, onRemove, depth = 0 }) {
   )
 }
 
-function ObjectFields({ fields, onChange, depth }) {
+function ObjectFields({ fields, onChange, schemas, depth }) {
   function addField() {
     onChange([...fields, { name: '', type: 'string', required: false, description: '' }])
   }
@@ -100,6 +122,7 @@ function ObjectFields({ fields, onChange, depth }) {
           field={f}
           onChange={v => updateField(i, v)}
           onRemove={() => removeField(i)}
+          schemas={schemas}
           depth={depth}
         />
       ))}
@@ -122,13 +145,18 @@ function fieldsToSchema(fields) {
 
   for (const f of fields) {
     if (!f.name) continue
+    if (f.type === '$ref') {
+      properties[f.name] = { $ref: REF_PREFIX + (f.ref || '') }
+      if (f.required) required.push(f.name)
+      continue
+    }
     const prop = { type: f.type }
     if (f.description) prop.description = f.description
     if (f.example) {
       try { prop.example = JSON.parse(f.example) } catch { prop.example = f.example }
     }
     if (f.type === 'array') {
-      prop.items = f.items || { type: 'string' }
+      prop.items = f.items?.$ref ? { $ref: f.items.$ref } : (f.items || { type: 'string' })
     }
     if (f.type === 'object' && f.properties?.length) {
       const nested = fieldsToSchema(f.properties)
@@ -147,6 +175,15 @@ function schemaToFields(schema) {
   if (!schema || !schema.properties) return []
   const required = schema.required || []
   return Object.entries(schema.properties).map(([name, prop]) => {
+    if (prop.$ref) {
+      return {
+        name,
+        type: '$ref',
+        ref: prop.$ref.startsWith(REF_PREFIX) ? prop.$ref.slice(REF_PREFIX.length) : '',
+        description: prop.description || '',
+        required: required.includes(name),
+      }
+    }
     const field = {
       name,
       type: prop.type || 'string',
@@ -296,7 +333,7 @@ export default function SchemaBuilder({ value, onChange, schemas, onSchemasChang
           className="w-full px-3 py-2 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
         />
       ) : (
-        <ObjectFields fields={fields} onChange={handleFieldsChange} depth={0} />
+        <ObjectFields fields={fields} onChange={handleFieldsChange} schemas={schemas} depth={0} />
       )}
     </div>
   )

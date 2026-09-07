@@ -194,6 +194,53 @@ class ImportRoundTripTest {
     }
 
     @Test
+    void responseHeadersSurviveRoundTrip() {
+        String spec = """
+                {
+                  "openapi": "3.0.0",
+                  "info": {"title": "t", "version": "1"},
+                  "paths": {
+                    "/a": {
+                      "get": {
+                        "summary": "s",
+                        "responses": {
+                          "200": {
+                            "description": "OK",
+                            "headers": {
+                              "X-Request-Id": {"description": "Идентификатор запроса", "schema": {"type": "string"}}
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                """;
+        ProjectDTO project = service.parseSpec(spec);
+        java.util.Map<String, String> headers = project.getEndpoints().get(0).getResponses().get(0).getHeaders();
+        assertTrue(headers.containsKey("X-Request-Id"));
+        assertEquals("Идентификатор запроса", headers.get("X-Request-Id"));
+
+        String regenerated = service.toJson(project);
+        assertTrue(regenerated.contains("X-Request-Id"));
+        assertTrue(regenerated.contains("Идентификатор запроса"));
+    }
+
+    @Test
+    void nestedComponentRefsSurviveRoundTrip() throws Exception {
+        // Components may reference other components (e.g. Error422.details: array of Detail422).
+        ProjectDTO project = parseOpenBankingSpec();
+        long nestedRefs = project.getSchemas().values().stream()
+                .filter(s -> s.contains("#/components/schemas/"))
+                .count();
+        assertTrue(nestedRefs > 0, "at least one component must reference another via $ref");
+
+        String regenerated = service.toJson(project);
+        assertTrue(regenerated.contains("#/components/schemas/"),
+                "nested component references must survive regeneration");
+    }
+
+    @Test
     void swaggerV2SpecIsConvertedToOpenApi3() {
         // Legacy Swagger 2.0 files ("swagger":"2.0") are rejected by OpenAPIV3Parser
         // and must go through SwaggerConverter first.

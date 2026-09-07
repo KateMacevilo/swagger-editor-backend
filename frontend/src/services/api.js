@@ -8,6 +8,8 @@ export const getProject = (id) => axios.get(`${BASE}/projects/${id}`).then(r => 
 export const createProject = (data) => axios.post(`${BASE}/projects`, data).then(r => r.data)
 export const updateProject = (id, data) => axios.put(`${BASE}/projects/${id}`, data).then(r => r.data)
 export const deleteProject = (id) => axios.delete(`${BASE}/projects/${id}`)
+export const renameProject = (id, title) =>
+  axios.post(`${BASE}/projects/${id}/rename`, { title }).then(r => r.data)
 
 // Spec preview
 export const getSpecJson = (project) =>

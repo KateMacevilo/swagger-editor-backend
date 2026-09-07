@@ -87,6 +87,9 @@ export default function ResponseBuilder({ responses, onChange, schemas, onSchema
               onSchemasChange={onSchemasChange}
             />
           )}
+
+          <HeadersEditor headers={resp.headers}
+            onChange={headers => update(idx, 'headers', headers)} />
         </div>
       ))}
 
@@ -96,6 +99,53 @@ export default function ResponseBuilder({ responses, onChange, schemas, onSchema
       >
         + Добавить ответ
       </button>
+    </div>
+  )
+}
+
+/** Response headers as name/description rows (stored as a map). */
+function HeadersEditor({ headers, onChange }) {
+  const pairs = Object.entries(headers || {})
+
+  function updatePair(idx, field, val) {
+    const next = [...pairs]
+    next[idx] = [field === 'name' ? val : next[idx][0], field === 'description' ? val : next[idx][1]]
+    onChange(Object.fromEntries(next.filter(([n]) => n)))
+  }
+
+  function addHeader() {
+    let name = `X-Header-${pairs.length + 1}`
+    let i = pairs.length + 1
+    while (name in (headers || {})) name = `X-Header-${++i}`
+    onChange({ ...(headers || {}), [name]: '' })
+  }
+
+  function removeHeader(name) {
+    const next = { ...(headers || {}) }
+    delete next[name]
+    onChange(next)
+  }
+
+  return (
+    <div className="mt-2">
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Headers</span>
+        <button type="button" onClick={addHeader}
+          className="text-xs text-blue-600 hover:underline">+ добавить header</button>
+      </div>
+      {pairs.length === 0 && <p className="text-[11px] text-gray-400">Нет заголовков</p>}
+      {pairs.map(([name, description], idx) => (
+        <div key={idx} className="flex items-center gap-2 mb-1">
+          <input value={name} onChange={e => updatePair(idx, 'name', e.target.value)}
+            placeholder="X-Request-Id"
+            className="w-40 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400" />
+          <input value={description} onChange={e => updatePair(idx, 'description', e.target.value)}
+            placeholder="Описание заголовка"
+            className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+          <button type="button" onClick={() => removeHeader(name)}
+            className="text-red-400 hover:text-red-600 text-xs px-1">✕</button>
+        </div>
+      ))}
     </div>
   )
 }

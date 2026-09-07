@@ -128,6 +128,28 @@ public class ProjectService {
         gitLabService.deleteFile(filePath, "Delete project " + projectId);
     }
 
+    /** Rename a project: moves {oldId}/openapi.json to the slug of the new title. */
+    public ProjectDTO rename(String projectId, String newTitle) {
+        ProjectDTO project = findById(projectId);
+        String newId = openApiService.toSlug(newTitle);
+        if (newId.equals(projectId)) {
+            project.setTitle(newTitle);
+            return project;
+        }
+        String oldPath = projectId + "/openapi.json";
+        String newPath = newId + "/openapi.json";
+        if (gitLabService.pathExists(newPath)) {
+            throw new IllegalArgumentException("Project \"" + newId + "\" already exists");
+        }
+        String content = gitLabService.readFile(oldPath);
+        gitLabService.renameFile(oldPath, newPath, content,
+                "Rename project \"" + project.getTitle() + "\" -> \"" + newTitle + "\"");
+        project.setId(newId);
+        project.setTitle(newTitle);
+        project.setGitLabFilePath(newPath);
+        return project;
+    }
+
     public ProjectSummaryDTO importSpec(String specContent) {
         ProjectDTO project = openApiService.parseSpec(specContent);
         String slug = openApiService.toSlug(project.getTitle());

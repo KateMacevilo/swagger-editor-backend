@@ -303,6 +303,7 @@ mvn -f pom.xml test
 | POST | `/api/projects` | Создать проект в GitLab (201) |
 | GET | `/api/projects/{id}` | Получить проект (JSON из GitLab); 404 если нет |
 | PUT | `/api/projects/{id}` | Сохранить проект в GitLab |
+| POST | `/api/projects/{id}/rename` | Переименовать проект: body `{"title": "..."}`, файл переносится в папку нового slug (400 если slug занят) |
 | DELETE | `/api/projects/{id}` | Удалить `openapi.json` из GitLab (204) |
 | POST | `/api/spec/json` | Сгенерировать OpenAPI JSON из `ProjectDTO` |
 | POST | `/api/spec/yaml` | Сгенерировать OpenAPI YAML из `ProjectDTO` |
@@ -430,7 +431,7 @@ gitlab.url=${GITLAB_URL:https://gitlab.com}
 3. **Нет базы данных** — несмотря на упоминание JPA/H2 в старой документации, в `pom.xml` нет `spring-boot-starter-data-jpa` и H2. Все данные живут в GitLab.
 4. **Frontend-сборка**: `npm run build` завершается успешно, но выдаёт предупреждение о размере JS-чанка (>500 kB, в основном из-за swagger-ui). Косметическое, функциональность не нарушается.
 5. **Сохранение на GitLab** требует валидного PAT (scope `api`) и прав на проект. При ошибках GitLab фронтенд показывает текст ошибки под кнопкой «Сохранить на GitLab».
-6. **Slug как ID**: после создания проекта изменить его идентификатор (имя папки) через UI нельзя — только переименованием файла в GitLab. Кириллические названия дают неинформативный slug `project` (транслитерации нет).
+6. **Slug как ID**: идентификатор проекта — папка в GitLab (slug названия). Смена названия в настройках проекта переносит файл в новую папку (`POST /api/projects/{id}/rename`, один коммит create+delete); если slug нового названия совпадает с существующим — ошибка 400. Кириллические названия дают неинформативный slug `project` (транслитерации нет).
 7. **Потеря данных при перезаписи**: `PUT /api/projects/{id}` перезаписывает список эндпоинтов целиком; отдельной стратегии merge нет.
 8. **`src/main/resources/scrins/`** — папка со скриншотами попала в ресурсы backend и уезжает в JAR; это не код, при желании её стоит вынести или удалить.
 9. **Неиспользуемые поля `ProjectDTO`**: `createdAt`/`updatedAt`/`gitLabLastCommitSha`/`gitLabLastPublishedAt` есть в DTO, но бэкенд их не заполняет при чтении из GitLab — рассчитывать на них в UI не стоит.

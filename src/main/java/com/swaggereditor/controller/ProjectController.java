@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 
 @RestController
@@ -41,6 +42,16 @@ public class ProjectController {
     @PutMapping("/{id}")
     public ResponseEntity<ProjectSummaryDTO> update(@PathVariable String id, @Valid @RequestBody ProjectDTO dto) {
         return ResponseEntity.ok(projectService.update(id, dto));
+    }
+
+    /** Rename a project: body {"title": "<new title>"}. Moves the file in GitLab to the new slug. */
+    @PostMapping("/{id}/rename")
+    public ResponseEntity<ProjectDTO> rename(@PathVariable String id, @RequestBody Map<String, String> body) {
+        String title = body != null ? body.get("title") : null;
+        if (title == null || title.isBlank()) {
+            throw new IllegalArgumentException("Title is required");
+        }
+        return ResponseEntity.ok(projectService.rename(id, title));
     }
 
     @DeleteMapping("/{id}")

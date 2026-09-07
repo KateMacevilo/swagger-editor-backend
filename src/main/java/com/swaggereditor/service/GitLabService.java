@@ -132,6 +132,32 @@ public class GitLabService {
         return true;
     }
 
+    /** True if the file exists in the repository at the configured branch. */
+    public boolean pathExists(String path) {
+        validateConfig();
+        return fileExists(path);
+    }
+
+    /** Move a file to a new path in a single commit (create + delete). */
+    public void renameFile(String oldPath, String newPath, String content, String message) {
+        validateConfig();
+        Map<String, Object> create = new LinkedHashMap<>();
+        create.put("action", "create");
+        create.put("file_path", normalizePath(newPath));
+        create.put("content", content);
+        Map<String, Object> delete = new LinkedHashMap<>();
+        delete.put("action", "delete");
+        delete.put("file_path", normalizePath(oldPath));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("branch", properties.branch());
+        body.put("commit_message", message);
+        body.put("actions", List.of(create, delete));
+
+        executeGitLabRequest(apiBase() + "/repository/commits", HttpMethod.POST, body, Map.class);
+        log.info("GitLab file renamed: {} -> {}", oldPath, newPath);
+    }
+
     private boolean fileExists(String path) {
         try {
             String url = apiBase() + "/repository/files/" + encode(normalizePath(path)) + "?ref=" + encode(properties.branch());

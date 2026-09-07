@@ -9,6 +9,7 @@ import com.swaggereditor.dto.ProjectDTO;
 import io.swagger.v3.core.util.Json;
 import io.swagger.v3.core.util.Yaml;
 import io.swagger.v3.oas.models.*;
+import io.swagger.v3.oas.models.headers.Header;
 import io.swagger.v3.oas.models.info.Contact;
 import io.swagger.v3.oas.models.info.Info;
 import io.swagger.v3.oas.models.info.License;
@@ -287,6 +288,15 @@ public class OpenApiService {
                     apiResponse.setContent(new Content().addMediaType("application/json",
                             new MediaType().schema(schema)));
                 }
+                if (resp.getHeaders() != null && !resp.getHeaders().isEmpty()) {
+                    Map<String, Header> headers = new LinkedHashMap<>();
+                    for (Map.Entry<String, String> h : resp.getHeaders().entrySet()) {
+                        headers.put(h.getKey(), new Header()
+                                .description(h.getValue())
+                                .schema(new StringSchema()));
+                    }
+                    apiResponse.setHeaders(headers);
+                }
                 apiResponses.addApiResponse(resp.getStatusCode(), apiResponse);
             }
         }
@@ -352,6 +362,12 @@ public class OpenApiService {
                     ApiResponseDTO resp = new ApiResponseDTO();
                     resp.setStatusCode(respEntry.getKey());
                     resp.setDescription(apiResponse.getDescription());
+                    if (apiResponse.getHeaders() != null && !apiResponse.getHeaders().isEmpty()) {
+                        Map<String, String> headers = new LinkedHashMap<>();
+                        apiResponse.getHeaders().forEach((name, header) ->
+                                headers.put(name, header.getDescription() != null ? header.getDescription() : ""));
+                        resp.setHeaders(headers);
+                    }
                     Schema<?> schema = extractBodySchema(apiResponse.getContent());
                     if (schema != null) {
                         resp.setBodySchema(schemaToJsonString(schema));

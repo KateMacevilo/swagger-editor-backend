@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, Link, useNavigate } from 'react-router-dom'
-import { getProject, updateProject, getSpecJson, getSpecJsonText, getSpecYamlText } from '../services/api'
+import { getProject, updateProject, renameProject, getSpecJson, getSpecJsonText, getSpecYamlText } from '../services/api'
 import ParameterBuilder from '../components/ParameterBuilder'
 import ResponseBuilder from '../components/ResponseBuilder'
 import SchemaBuilder from '../components/SchemaBuilder'
@@ -30,6 +30,13 @@ const DEFAULT_PROJECT = {
   serverUrl: '', serverDescription: '', endpoints: []
 }
 
+/** Mirrors OpenApiService.toSlug — must stay in sync with the backend. */
+function slugify(title) {
+  if (!title || !title.trim()) return 'untitled-project'
+  const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+  return slug || 'project'
+}
+
 export default function EditorPage() {
   const { projectId } = useParams()
   const navigate = useNavigate()
@@ -45,6 +52,7 @@ export default function EditorPage() {
   const [showProjectEdit, setShowProjectEdit] = useState(false)
   const [projectForm, setProjectForm] = useState(DEFAULT_PROJECT)
   const [showComponents, setShowComponents] = useState(false)
+  const [previewWidth, setPreviewWidth] = useState(42)
 
   const debounceRef = useRef(null)
 
@@ -101,6 +109,71 @@ export default function EditorPage() {
     setProject(prev => ({ ...prev, schemas }))
   }
 
+  /** Drag the splitter between the editor and the swagger preview to resize the preview panel. */
+  function startPreviewDrag(e) {
+    e.preventDefault()
+    const onMove = ev => {
+      const pct = Math.min(75, Math.max(15, (1 - ev.clientX / window.innerWidth) * 100))
+      setPreviewWidth(pct)
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
+  /** Rewrite {"$ref": "#/components/schemas/<oldName>"} to the new name in a JSON string. */
+  function rewriteRefs(json, oldName, newName) {
+    if (!json || !json.includes('#/components/schemas/')) return json
+    const walk = v => {
+      if (Array.isArray(v)) return v.map(walk)
+      if (v && typeof v === 'object') {
+        const out = {}
+        for (const [k, val] of Object.entries(v)) out[k] = walk(val)
+        return out
+      }
+      return v === `#/components/schemas/${oldName}` ? `#/components/schemas/${newName}` : v
+    }
+    try { return JSON.stringify(walk(JSON.parse(json))) } catch { return json }
+  }
+
+  function renameComponent(oldName, newName) {
+    newName = (newName || '').trim()
+    if (!newName || newName === oldName) return
+    if (project.schemas?.[newName]) {
+      alert(`Компонент «${newName}» уже существует`)
+      return
+    }
+    const schemas = {}
+    for (const [k, v] of Object.entries(project.schemas || {})) {
+      schemas[k === oldName ? newName : k] = rewriteRefs(v, oldName, newName)
+    }
+    const endpoints = (project.endpoints || []).map(ep => ({
+      ...ep,
+      requestBodySchema: rewriteRefs(ep.requestBodySchema, oldName, newName),
+      responses: (ep.responses || []).map(r => ({
+        ...r,
+        bodySchema: rewriteRefs(r.bodySchema, oldName, newName)
+      }))
+    }))
+    setProject(prev => ({ ...prev, schemas, endpoints }))
+    // The open endpoint form holds a copy of its bodies — keep it in sync.
+    setForm(prev => ({
+      ...prev,
+      requestBodySchema: rewriteRefs(prev.requestBodySchema, oldName, newName),
+      responses: (prev.responses || []).map(r => ({
+        ...r,
+        bodySchema: rewriteRefs(r.bodySchema, oldName, newName)
+      }))
+    }))
+  }
+
   async function handleSaveEndpoint(e) {
     e.preventDefault()
     if (!form.path || !form.method) return
@@ -130,8 +203,16 @@ export default function EditorPage() {
     setSaving(true)
     setSaveError(null)
     try {
-      await updateProject(projectId, updated)
-      setProject(updated)
+      // Title -> slug must match the URL id; rename the GitLab folder when it doesn't.
+      const newSlug = slugify(projectForm.title)
+      if (newSlug !== projectId) {
+        await renameProject(projectId, projectForm.title)
+        await updateProject(newSlug, updated)
+        navigate(`/project/${newSlug}`, { replace: true })
+      } else {
+        await updateProject(projectId, updated)
+        setProject(updated)
+      }
       setShowProjectEdit(false)
     } catch (err) {
       const message = err.response?.data?.message || err.message || 'Ошибка сохранения'
@@ -371,7 +452,10 @@ export default function EditorPage() {
       </main>
 
       {/* RIGHT PANEL */}
-      <aside className="w-[42%] flex flex-col bg-white overflow-hidden">
+      <div className="w-1.5 bg-gray-200 hover:bg-blue-400 active:bg-blue-500 cursor-col-resize flex-shrink-0 transition-colors"
+        onMouseDown={startPreviewDrag}
+        title="Потяните, чтобы изменить ширину предпросмотра" />
+      <aside className="flex flex-col bg-white overflow-hidden flex-shrink-0" style={{ width: `${previewWidth}%` }}>
         <div className="px-4 py-2 border-b border-gray-200 flex-shrink-0 flex justify-between items-center">
           <span className="text-sm font-medium text-gray-700">Предпросмотр спецификации</span>
           {loadingSpec && <span className="text-xs text-gray-400">обновление...</span>}
@@ -451,7 +535,24 @@ export default function EditorPage() {
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Компоненты схем ({Object.keys(project.schemas || {}).length})</h2>
-              <button onClick={() => setShowComponents(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              <div className="flex items-center gap-3">
+                <button type="button"
+                  onClick={() => {
+                    const name = window.prompt('Имя нового компонента (например, ErrorResponse403):')
+                    if (name === null) return
+                    const key = name.trim()
+                    if (!key) return
+                    if (project.schemas?.[key]) {
+                      alert(`Компонент «${key}» уже существует`)
+                      return
+                    }
+                    updateSchemas({ ...(project.schemas || {}), [key]: '{"type":"object","properties":{}}' })
+                  }}
+                  className="text-sm text-blue-600 hover:underline">
+                  + Создать компонент
+                </button>
+                <button onClick={() => setShowComponents(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              </div>
             </div>
             {Object.keys(project.schemas || {}).length === 0 && (
               <p className="text-sm text-gray-400">
@@ -463,6 +564,10 @@ export default function EditorPage() {
               <ComponentRow key={name} name={name} json={json}
                 schemas={project.schemas}
                 onSchemasChange={updateSchemas}
+                onRename={() => {
+                  const newName = window.prompt('Новое имя компонента:', name)
+                  if (newName !== null) renameComponent(name, newName)
+                }}
                 onDelete={() => {
                   if (!confirm(`Удалить компонент «${name}»? Эндпоинты со ссылкой на него сохранят $ref, но схема станет недоступна.`)) return
                   const next = { ...project.schemas }
@@ -524,8 +629,8 @@ function ScopesEditor({ scopes, onChange }) {
   )
 }
 
-/** One component entry: name, short summary, expandable editor, delete. */
-function ComponentRow({ name, json, schemas, onSchemasChange, onDelete }) {
+/** One component entry: name, short summary, expandable editor, rename, delete. */
+function ComponentRow({ name, json, schemas, onSchemasChange, onRename, onDelete }) {
   const [expanded, setExpanded] = useState(false)
 
   let summary = 'схема'
@@ -546,6 +651,10 @@ function ComponentRow({ name, json, schemas, onSchemasChange, onDelete }) {
         <button type="button" onClick={() => setExpanded(!expanded)}
           className="text-xs text-blue-600 hover:underline whitespace-nowrap">
           {expanded ? 'Свернуть' : 'Открыть'}
+        </button>
+        <button type="button" onClick={onRename}
+          className="text-xs text-blue-600 hover:underline whitespace-nowrap">
+          Переименовать
         </button>
         <button type="button" onClick={onDelete}
           className="text-xs text-red-500 hover:text-red-700 whitespace-nowrap">

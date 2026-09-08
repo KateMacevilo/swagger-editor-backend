@@ -280,6 +280,19 @@ kubectl port-forward svc/swagger-editor-backend 8080:8080
 
 Удаление: `helm uninstall swagger-editor-backend` (данные в GitLab остаются — удаляются только ресурсы в кластере).
 
+#### CI/CD (GitLab CI)
+
+`.gitlab-ci.yml` в корне собирает образ целиком через `Dockerfile.full` (frontend собирается в первой стадии, JAR — во второй) и пушит его в Artifactory:
+
+- стадия `build-image` — `docker build -f Dockerfile.full` + push `artifacts.priorbank.by/<namespace>/swagger-editor-backend:<sha>` и `:latest`, запускается на пуш в `master-back`;
+- стадия `deploy-k8s` (manual) — `helm upgrade --install` с подстановкой `image.tag=<sha>`, `gitlabToken` и `imagePullSecrets` через `--set`.
+
+Для работы нужны CI-переменные (masked): `ARTIFACTORY_USER`, `ARTIFACTORY_PASSWORD`, `GITLAB_TOKEN` (+ опционально `GITLAB_PROJECT`/`GITLAB_BRANCH`/`GITLAB_URL`). Перед первым деплоем создать pull-secret: `kubectl create secret docker-registry artifactory-cred --docker-server=artifacts.priorbank.by --docker-username=<user> --docker-password=<pass>`. В `values-local.yaml` секреты можно не держать — деплой из CI передаёт их через `--set`.
+
+**Air-gapped (нет доступа к Docker Hub/npm с runner'а).** Базовые образы `Dockerfile.full` параметризованы: `--build-arg NODE_IMAGE=/MAVEN_IMAGE=/JRE_IMAGE=` позволяют подставить пути из Artifactory-proxy (в CI — через одноимённые переменные, см. `.gitlab-ci.yml`). Если proxy-репозиториев в Artifactory нет — собирать образ на машине с интернетом и пушить в Artifactory вручную (`docker build -f Dockerfile.full -t <registry>/... . && docker push ...`), а CI оставить только на деплой. `npm ci` внутри стадии frontend тоже требует доступа к npm-registry — штатно его проксирует тот же Artifactory (иначе: собрать `frontend/dist` на машине с Node и подкладывать, либо `npm ci --offline` из закэшированного tarball).
+
+Образ frontend (`swagger-editor-backend-frontend`, dev-сервер Vite) на k8s не нужен — в проде UI раздаётся из JAR бэкенда; dev-образ используется только для локальной разработки на машинах без Node.js.
+
 ### Тесты
 
 ```bash

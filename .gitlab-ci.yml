@@ -1,0 +1,52 @@
+# GitLab CI: build the full image (frontend + backend in one JAR via Dockerfile.full),
+# push it to the internal Artifactory, optionally deploy to k8s via Helm.
+#
+# Required CI/CD variables (Settings -> CI/CD -> Variables, mark masked):
+#   ARTIFACTORY_USER       — login for artifacts.priorbank.by
+#   ARTIFACTORY_PASSWORD   — password / identity token
+#   GITLAB_TOKEN           — PAT (scope api) for the editor's GitLab storage, used at deploy
+#
+# Adjust IMAGE namespace and the branch list below.
+
+stages:
+  - build
+  - deploy
+
+variables:
+  IMAGE: artifacts.priorbank.by/isuite/swagger-editor-backend
+
+build-image:
+  stage: build
+  image: docker:24
+  services:
+    - docker:24-dind
+  script:
+    - docker login -u "$ARTIFACTORY_USER" -p "$ARTIFACTORY_PASSWORD" artifacts.priorbank.by
+    # Optional: if the runner cannot reach Docker Hub, set CI variables NODE_IMAGE /
+    # MAVEN_IMAGE / JRE_IMAGE to Artifactory-proxy paths (see Dockerfile.full header).
+    - >-
+      docker build -f Dockerfile.full
+      ${NODE_IMAGE:+--build-arg NODE_IMAGE=$NODE_IMAGE}
+      ${MAVEN_IMAGE:+--build-arg MAVEN_IMAGE=$MAVEN_IMAGE}
+      ${JRE_IMAGE:+--build-arg JRE_IMAGE=$JRE_IMAGE}
+      -t "$IMAGE:$CI_COMMIT_SHORT_SHA" -t "$IMAGE:latest" .
+    - docker push "$IMAGE:$CI_COMMIT_SHORT_SHA"
+    - docker push "$IMAGE:latest"
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master-back"
+
+deploy-k8s:
+  stage: deploy
+  image: alpine/helm:3.14.0
+  script:
+    - helm upgrade --install swagger-editor-backend ./chart
+      --set image.repository="$IMAGE"
+      --set image.tag="$CI_COMMIT_SHORT_SHA"
+      --set gitlab.project="$GITLAB_PROJECT"
+      --set gitlab.branch="$GITLAB_BRANCH"
+      --set gitlab.url="$GITLAB_URL"
+      --set gitlabToken="$GITLAB_TOKEN"
+      --set imagePullSecrets[0].name=artifactory-cred
+  when: manual
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master-back"

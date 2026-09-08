@@ -16,15 +16,16 @@
 
 # ---- Stage 1: build frontend ----
 ARG NODE_IMAGE=node:20-bookworm-slim
+ARG MAVEN_IMAGE=maven:3.9-eclipse-temurin-17
+ARG JRE_IMAGE=eclipse-temurin:17-jre
 FROM ${NODE_IMAGE} AS frontend
 WORKDIR /build/frontend
-COPY frontend/package.json frontend/package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
 RUN npm ci
 COPY frontend/ ./
 RUN npm run build
 
 # ---- Stage 2: build backend JAR (frontend dist lands in static/) ----
-ARG MAVEN_IMAGE=maven:3.9-eclipse-temurin-17
 FROM ${MAVEN_IMAGE} AS backend
 WORKDIR /build
 COPY pom.xml ./
@@ -33,7 +34,6 @@ COPY --from=frontend /build/frontend/dist ./src/main/resources/static
 RUN mvn -q package -DskipTests
 
 # ---- Stage 3: runtime ----
-ARG JRE_IMAGE=eclipse-temurin:17-jre
 FROM ${JRE_IMAGE}
 WORKDIR /app
 COPY --from=backend /build/target/swagger-editor-backend-1.0.0.jar app.jar

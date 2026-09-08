@@ -12,7 +12,7 @@ FROM node:20-bookworm-slim
 WORKDIR /app
 
 COPY package.json package-lock.json .npmrc ./
-RUN npm ci && npm cache clean --force
+RUN npm ci --engine-strict=false && npm cache clean --force
 
 COPY . .
 

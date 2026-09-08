@@ -2,7 +2,7 @@
 # push it to the internal Artifactory, optionally deploy to k8s via Helm.
 #
 # Required CI/CD variables (Settings -> CI/CD -> Variables, mark masked):
-#   ARTIFACTORY_USER       — login for artifacts.priorbank.by
+#   ARTIFACTORY_USER       — login for artifacts.pr.by
 #   ARTIFACTORY_PASSWORD   — password / identity token
 #   GITLAB_TOKEN           — PAT (scope api) for the editor's GitLab storage, used at deploy
 #
@@ -13,7 +13,7 @@ stages:
   - deploy
 
 variables:
-  IMAGE: artifacts.priorbank.by/isuite/swagger-editor-backend
+  IMAGE: artifacts.pr.by/isuite/swagger-editor-backend
 
 build-image:
   stage: build
@@ -21,7 +21,7 @@ build-image:
   services:
     - docker:24-dind
   script:
-    - docker login -u "$ARTIFACTORY_USER" -p "$ARTIFACTORY_PASSWORD" artifacts.priorbank.by
+    - docker login -u "$ARTIFACTORY_USER" -p "$ARTIFACTORY_PASSWORD" artifacts.pr.by
     # Optional: if the runner cannot reach Docker Hub, set CI variables NODE_IMAGE /
     # MAVEN_IMAGE / JRE_IMAGE to Artifactory-proxy paths (see Dockerfile.full header).
     - >-
@@ -39,7 +39,7 @@ deploy-k8s:
   stage: deploy
   image: alpine/helm:3.14.0
   script:
-    - helm upgrade --install swagger-editor-backend ./chart
+    - helm upgrade --install swagger-editor ./chart
       --set image.repository="$IMAGE"
       --set image.tag="$CI_COMMIT_SHORT_SHA"
       --set gitlab.project="$GITLAB_PROJECT"

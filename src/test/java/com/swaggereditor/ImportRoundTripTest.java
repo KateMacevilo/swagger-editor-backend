@@ -28,7 +28,7 @@ class ImportRoundTripTest {
     void parsesAllEndpoints() throws Exception {
         ProjectDTO project = parseOpenBankingSpec();
         assertEquals("Open-banking", project.getTitle());
-        assertEquals("https://api.priorbank.by:9344/open-banking/v1.0", project.getServerUrl());
+        assertEquals("https://api.pr.by:9344/open-banking/v1.0", project.getServerUrl());
         assertEquals(42, project.getEndpoints().size());
         assertTrue(project.getEndpoints().stream().allMatch(ep ->
                 ep.getSummary() != null && !ep.getSummary().isBlank()));

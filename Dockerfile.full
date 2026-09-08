@@ -9,9 +9,9 @@
 # Air-gapped environments: base images are overridable — point them at your
 # internal registry / Artifactory proxy, e.g.:
 #   docker build -f Dockerfile.full \
-#     --build-arg NODE_IMAGE=artifacts.priorbank.by/docker-hub/node:20-bookworm-slim \
-#     --build-arg MAVEN_IMAGE=artifacts.priorbank.by/docker-hub/maven:3.9-eclipse-temurin-17 \
-#     --build-arg JRE_IMAGE=artifacts.priorbank.by/docker-hub/eclipse-temurin:17-jre \
+#     --build-arg NODE_IMAGE=artifacts.pr.by/docker-hub/node:20-bookworm-slim \
+#     --build-arg MAVEN_IMAGE=artifacts.pr.by/docker-hub/maven:3.9-eclipse-temurin-17 \
+#     --build-arg JRE_IMAGE=artifacts.pr.by/docker-hub/eclipse-temurin:17-jre \
 #     -t swagger-editor-backend:1.0.0 .
 
 # ---- Stage 1: build frontend ----
@@ -21,7 +21,10 @@ ARG JRE_IMAGE=eclipse-temurin:17-jre
 FROM ${NODE_IMAGE} AS frontend
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./
-RUN npm ci
+# --engine-strict=false: internal base images may set NPM_CONFIG_ENGINE_STRICT=true (env
+# beats .npmrc); the CLI flag has the highest precedence. swagger-client's node>=22
+# engines field does not affect our build on node 20.
+RUN npm ci --engine-strict=false
 COPY frontend/ ./
 RUN npm run build
 

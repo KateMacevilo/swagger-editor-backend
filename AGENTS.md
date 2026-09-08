@@ -48,7 +48,7 @@ swagger-editor-backend/
 ├── pom.xml                              # Корневой Maven POM (backend)
 ├── Dockerfile                           # Контейнерный образ для k8s (eclipse-temurin:17-jre)
 ├── Dockerfile.full                      # Multi-stage: собирает frontend+backend внутри Docker
-├── Dockerfile.testR                     # Образ для инфраструктуры Priorbank (внутренний registry,
+├── Dockerfile.testR                     # Образ для инфраструктуры pr (внутренний registry,
 │                                        #   Java 21, конфиг через смонтированные файлы, не env)
 ├── docker-compose.yml                   # Dev-сервер фронтенда в Docker (VITE_API_TARGET)
 ├── .dockerignore
@@ -179,9 +179,9 @@ docker run -d --name swagger-editor -p 8080:8080 \
 docker build -f Dockerfile.full -t swagger-editor-backend:1.0.0 .
 ```
 
-### Образ для инфраструктуры Priorbank
+### Образ для инфраструктуры pr
 
-`Dockerfile.testR` — внутренний образ для инфраструктуры заказчика: базовый образ из `artifacts.priorbank.by` (без доступа в интернет), Java 21, конфигурация через смонтированные файлы `/etc/config/config.yaml` и `/etc/secret/secret.yaml` (env-переменные по-прежнему работают и имеют приоритет). Обычной разработке не нужен.
+`Dockerfile.testR` — внутренний образ для инфраструктуры заказчика: базовый образ из `artifacts.pr.by` (без доступа в интернет), Java 21, конфигурация через смонтированные файлы `/etc/config/config.yaml` и `/etc/secret/secret.yaml` (env-переменные по-прежнему работают и имеют приоритет). Обычной разработке не нужен.
 
 ### Развёртывание в Kubernetes через Helm
 
@@ -249,20 +249,20 @@ EOF
 **Шаг 3. Установка / обновление**
 
 ```bash
-helm install swagger-editor-backend ./chart -f chart/values-local.yaml
-helm upgrade swagger-editor-backend ./chart -f chart/values-local.yaml
+helm install swagger-editor ./chart -f chart/values-local.yaml
+helm upgrade swagger-editor ./chart -f chart/values-local.yaml
 ```
 
-Релиз назовите именно `swagger-editor-backend` — тогда все ресурсы получат имя `swagger-editor-backend` (иначе имя будет `<релиз>-swagger-editor-backend`).
+Имя всех ресурсов (Deployment/Service/Ingress) фиксируется значением `fullnameOverride: "swagger-editor"` в `chart/values.yaml` — оно не зависит от имени релиза. Поменять имя сервиса — изменить только этот параметр.
 
 **Шаг 4. Проверка**
 
 ```bash
-kubectl get pods -l app.kubernetes.io/instance=swagger-editor-backend
-kubectl logs -l app.kubernetes.io/instance=swagger-editor-backend --tail=100
+kubectl get pods -l app.kubernetes.io/instance=swagger-editor
+kubectl logs -l app.kubernetes.io/instance=swagger-editor --tail=100
 
 # Доступ без ingress:
-kubectl port-forward svc/swagger-editor-backend 8080:8080
+kubectl port-forward svc/swagger-editor 8080:8080
 # → http://localhost:8080 (UI + API в одном)
 ```
 
@@ -278,18 +278,18 @@ kubectl port-forward svc/swagger-editor-backend 8080:8080
 | Долгий старт списка проектов | Норма: `findAll()` делает N+1 запросов к GitLab API (дерево + каждый `openapi.json`) |
 | Ingress 502 | Под не ready — смотреть `kubectl logs`; проверить `service.port` (8080) |
 
-Удаление: `helm uninstall swagger-editor-backend` (данные в GitLab остаются — удаляются только ресурсы в кластере).
+Удаление: `helm uninstall swagger-editor` (данные в GitLab остаются — удаляются только ресурсы в кластере).
 
 #### CI/CD (GitLab CI)
 
 `.gitlab-ci.yml` в корне собирает образ целиком через `Dockerfile.full` (frontend собирается в первой стадии, JAR — во второй) и пушит его в Artifactory:
 
-- стадия `build-image` — `docker build -f Dockerfile.full` + push `artifacts.priorbank.by/<namespace>/swagger-editor-backend:<sha>` и `:latest`, запускается на пуш в `master-back`;
+- стадия `build-image` — `docker build -f Dockerfile.full` + push `artifacts.pr.by/<namespace>/swagger-editor-backend:<sha>` и `:latest`, запускается на пуш в `master-back`;
 - стадия `deploy-k8s` (manual) — `helm upgrade --install` с подстановкой `image.tag=<sha>`, `gitlabToken` и `imagePullSecrets` через `--set`.
 
-Для работы нужны CI-переменные (masked): `ARTIFACTORY_USER`, `ARTIFACTORY_PASSWORD`, `GITLAB_TOKEN` (+ опционально `GITLAB_PROJECT`/`GITLAB_BRANCH`/`GITLAB_URL`). Перед первым деплоем создать pull-secret: `kubectl create secret docker-registry artifactory-cred --docker-server=artifacts.priorbank.by --docker-username=<user> --docker-password=<pass>`. В `values-local.yaml` секреты можно не держать — деплой из CI передаёт их через `--set`.
+Для работы нужны CI-переменные (masked): `ARTIFACTORY_USER`, `ARTIFACTORY_PASSWORD`, `GITLAB_TOKEN` (+ опционально `GITLAB_PROJECT`/`GITLAB_BRANCH`/`GITLAB_URL`). Перед первым деплоем создать pull-secret: `kubectl create secret docker-registry artifactory-cred --docker-server=artifacts.pr.by --docker-username=<user> --docker-password=<pass>`. В `values-local.yaml` секреты можно не держать — деплой из CI передаёт их через `--set`.
 
-**Air-gapped (нет доступа к Docker Hub/npm с runner'а).** Базовые образы `Dockerfile.full` параметризованы: `--build-arg NODE_IMAGE=/MAVEN_IMAGE=/JRE_IMAGE=` позволяют подставить пути из Artifactory-proxy (в CI — через одноимённые переменные, см. `.gitlab-ci.yml`). Если proxy-репозиториев в Artifactory нет — собирать образ на машине с интернетом и пушить в Artifactory вручную (`docker build -f Dockerfile.full -t <registry>/... . && docker push ...`), а CI оставить только на деплой. `npm ci` внутри стадии frontend тоже требует доступа к npm-registry — штатно его проксирует тот же Artifactory (иначе: собрать `frontend/dist` на машине с Node и подкладывать, либо `npm ci --offline` из закэшированного tarball).
+**Air-gapped (нет доступа к Docker Hub/npm с runner'а).** Базовые образы `Dockerfile.full` параметризованы: `--build-arg NODE_IMAGE=/MAVEN_IMAGE=/JRE_IMAGE=` позволяют подставить пути из Artifactory-proxy (в CI — через одноимённые переменные, см. `.gitlab-ci.yml`). Если proxy-репозиториев в Artifactory нет — собирать образ на машине с интернетом и пушить в Artifactory вручную (`docker build -f Dockerfile.full -t <registry>/... . && docker push ...`), а CI оставить только на деплой. Если машина с интернетом не имеет доступа к Artifactory — перенести образ файлом: `docker save <image> | gzip > img.tar.gz` → на площадке `gunzip -c img.tar.gz | ctr -n k8s.io images import -` на каждой ноде (тогда `image.pullPolicy: IfNotPresent`). `npm ci` внутри стадии frontend тоже требует доступа к npm-registry — штатно его проксирует тот же Artifactory; внутренние образы node могут включать `engine-strict` через `NPM_CONFIG_ENGINE_STRICT` (env перекрывает `.npmrc`, поэтому в Dockerfile'ах используется флаг CLI `npm ci --engine-strict=false`).
 
 Образ frontend (`swagger-editor-backend-frontend`, dev-сервер Vite) на k8s не нужен — в проде UI раздаётся из JAR бэкенда; dev-образ используется только для локальной разработки на машинах без Node.js.
 

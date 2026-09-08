@@ -11,7 +11,9 @@ image:
 
 imagePullSecrets: []
 nameOverride: ""
-fullnameOverride: ""
+# All resources (Deployment/Service/Ingress) get exactly this name,
+# independent of the helm release name.
+fullnameOverride: "swagger-editor"
 
 serviceAccount:
   create: false

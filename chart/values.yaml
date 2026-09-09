@@ -80,3 +80,13 @@ gitlabToken: ""
 serverPort: 8080
 multipartMaxFileSize: 10MB
 multipartMaxRequestSize: 10MB
+
+# Corporate CA certificate for GitLab (fixes PKIX path building failed /
+# SSLHandshakeException when GitLab is behind an internal CA).
+# Works WITHOUT rebuilding the image: an initContainer copies the JRE truststore,
+# imports every *.crt from the ConfigMap, and the app uses it via JAVA_TOOL_OPTIONS.
+# Create the ConfigMap first:
+#   kubectl create configmap gitlab-ca --from-file=prior-ca.crt=<path-to.crt>
+gitlabCa:
+  enabled: false
+  configMap: gitlab-ca

@@ -39,6 +39,16 @@ RUN mvn -q package -DskipTests
 # ---- Stage 3: runtime ----
 FROM ${JRE_IMAGE}
 WORKDIR /app
+# Optional corporate CA certificates: put *.crt files into certs/ before building
+# (e.g. certs/prior-ca.crt exported from the browser / provided by IT security).
+# They are imported into the JRE truststore so the backend trusts a GitLab
+# behind an internal or otherwise untrusted CA (fixes PKIX/SSLHandshake errors).
+COPY certs /tmp/certs
+RUN for f in /tmp/certs/*.crt; do \
+      [ -e "$f" ] || continue; \
+      keytool -importcert -trustcacerts -cacerts -storepass changeit -noprompt \
+        -alias "$(basename "$f" .crt)" -file "$f"; \
+    done
 COPY --from=backend /build/target/swagger-editor-backend-1.0.0.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

@@ -52,6 +52,7 @@ export default function EditorPage() {
   const [showProjectEdit, setShowProjectEdit] = useState(false)
   const [projectForm, setProjectForm] = useState(DEFAULT_PROJECT)
   const [showComponents, setShowComponents] = useState(false)
+  const [componentQuery, setComponentQuery] = useState('')
   const [previewWidth, setPreviewWidth] = useState(42)
 
   const debounceRef = useRef(null)
@@ -560,7 +561,19 @@ export default function EditorPage() {
                 или через «сохранить как компонент» в редакторе схемы.
               </p>
             )}
-            {Object.entries(project.schemas || {}).map(([name, json]) => (
+            {Object.keys(project.schemas || {}).length > 0 && (
+              <input
+                type="text"
+                value={componentQuery}
+                onChange={e => setComponentQuery(e.target.value)}
+                placeholder="Поиск компонента…"
+                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+            )}
+            {Object.entries(project.schemas || {})
+              .sort(([a], [b]) => a.localeCompare(b))
+              .filter(([name]) => !componentQuery || name.toLowerCase().includes(componentQuery.toLowerCase()))
+              .map(([name, json]) => (
               <ComponentRow key={name} name={name} json={json}
                 schemas={project.schemas}
                 onSchemasChange={updateSchemas}

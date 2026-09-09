@@ -27,12 +27,49 @@ spec:
       serviceAccountName: {{ include "swagger-editor-backend.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.gitlabCa.enabled }}
+      volumes:
+        - name: truststore
+          emptyDir: {}
+        - name: gitlab-ca
+          configMap:
+            name: {{ .Values.gitlabCa.configMap }}
+      initContainers:
+        - name: init-truststore
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          command: ["sh", "-c"]
+          args:
+            - |
+              cp "$JAVA_HOME/lib/security/cacerts" /truststore/cacerts &&
+              for f in /ca/*.crt; do
+                [ -e "$f" ] || continue
+                keytool -importcert -trustcacerts -keystore /truststore/cacerts \
+                  -storepass changeit -noprompt -alias "$(basename "$f" .crt)" -file "$f"
+              done
+          volumeMounts:
+            - name: truststore
+              mountPath: /truststore
+            - name: gitlab-ca
+              mountPath: /ca
+              readOnly: true
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if .Values.gitlabCa.enabled }}
+          env:
+            - name: JAVA_TOOL_OPTIONS
+              value: "-Djavax.net.ssl.trustStore=/truststore/cacerts -Djavax.net.ssl.trustStorePassword=changeit"
+          {{- end }}
+          {{- if .Values.gitlabCa.enabled }}
+          volumeMounts:
+            - name: truststore
+              mountPath: /truststore
+              readOnly: true
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.serverPort }}

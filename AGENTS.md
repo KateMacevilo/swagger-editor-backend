@@ -48,6 +48,8 @@ swagger-editor-backend/
 ├── pom.xml                              # Корневой Maven POM (backend)
 ├── Dockerfile                           # Контейнерный образ для k8s (eclipse-temurin:17-jre)
 ├── Dockerfile.full                      # Multi-stage: собирает frontend+backend внутри Docker
+├── Dockerfile.prod-dist                 # Без npm-стадии: dist собирается dev-образом фронтенда заранее
+├── certs/                               # *.crt → импорт в truststore JRE (корпоративный CA GitLab)
 ├── Dockerfile.testR                     # Образ для инфраструктуры pr (внутренний registry,
 │                                        #   Java 21, конфиг через смонтированные файлы, не env)
 ├── docker-compose.yml                   # Dev-сервер фронтенда в Docker (VITE_API_TARGET)
@@ -171,12 +173,39 @@ docker run -d --name swagger-editor -p 8080:8080 \
 
 Базовый образ — `eclipse-temurin:17-jre`, порт 8080. `Dockerfile` копирует готовый JAR и сам ничего не собирает.
 
+### Корпоративный сертификат GitLab (PKIX/SSLHandshake)
+
+Если бэкенд при обращении к GitLab падает с `PKIX path building failed` / `SSLHandshakeException` (корпоративный CA не входит в truststore JRE), положите сертификат(ы) CA в `certs/*.crt` — все три Dockerfile (`Dockerfile`, `Dockerfile.full`, `Dockerfile.prod-dist`) импортируют их в truststore JRE (`keytool -cacerts`) при сборке. Сертификат возьмите у ИБ/админов GitLab либо выгрузите из браузера; как временная мера подойдёт и серверный сертификат:
+
+```bash
+openssl s_client -connect <gitlab-host>:443 -servername <gitlab-host> </dev/null 2>/dev/null \
+  | openssl x509 > certs/prior-ca.crt
+```
+
 ### Полная сборка в Docker (без локальных Node/Maven/JDK)
 
 `Dockerfile.full` — multi-stage: frontend собирается в стадии `node`, JAR — в стадии `maven`, в финальный образ копируется только JAR:
 
 ```bash
 docker build -f Dockerfile.full -t swagger-editor-backend:1.0.0 .
+```
+
+### Сборка на машине без Node.js, с готовым образом фронтенда
+
+`Dockerfile.prod-dist` — как `Dockerfile.full`, но стадия npm пропущена: `frontend/dist` собирается заранее самим dev-образом фронтенда (в нём уже есть `node_modules`), затем собирается только JAR:
+
+```bash
+# 1) собрать dist образом фронтенда (в корне репозитория)
+docker run --rm -v "$PWD/frontend:/fe" swagger-editor-backend-frontend sh -c \
+  "rm -rf /tmp/f && cp -r /fe /tmp/f && ln -s /app/node_modules /tmp/f/node_modules \
+   && cd /tmp/f && npm run build && rm -rf /fe/dist && cp -r /tmp/f/dist /fe/dist"
+# 2) dist → ресурсы backend (docker-контекст frontend/dist игнорируется)
+mkdir -p src/main/resources/static && cp -r frontend/dist/* src/main/resources/static/
+# 3) сборка; базовые образы можно подставить из внутреннего registry
+docker build -f Dockerfile.prod-dist \
+  --build-arg MAVEN_IMAGE=<registry>/maven:3.9-eclipse-temurin-17 \
+  --build-arg JRE_IMAGE=<registry>/eclipse-temurin:17-jre \
+  -t swagger-editor:1.0.0 .
 ```
 
 ### Образ для инфраструктуры pr
@@ -275,6 +304,7 @@ kubectl port-forward svc/swagger-editor 8080:8080
 | `ImagePullBackOff` | Неверный `image.repository`/tag, приватный registry без `imagePullSecrets`, в air-gapped-кластере образ не загружен на ноду |
 | 503 «GitLab integration is not configured» | Не заданы `GITLAB_TOKEN`/`GITLAB_PROJECT` (пустые `gitlabToken`/`gitlab.project` в values — secret/configmap не собрались) |
 | 404 «Project Not Found» от GitLab | Неверный `gitlab.project` (должен быть путь `group/project`, не URL и не `.git`), либо у токена нет прав на проект |
+| `PKIX path building failed` / `SSLHandshakeException` к GitLab | GitLab за корпоративным CA. Без пересборки образа: `kubectl create configmap gitlab-ca --from-file=prior-ca.crt=<crt>` + `gitlabCa.enabled=true` в values (initContainer соберёт truststore и подключит его через `JAVA_TOOL_OPTIONS`). С пересборкой: положить `.crt` в `certs/` — Dockerfile импортируют его в truststore JRE |
 | Долгий старт списка проектов | Норма: `findAll()` делает N+1 запросов к GitLab API (дерево + каждый `openapi.json`) |
 | Ingress 502 | Под не ready — смотреть `kubectl logs`; проверить `service.port` (8080) |
 

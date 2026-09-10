@@ -10,14 +10,14 @@
 # internal registry / Artifactory proxy, e.g.:
 #   docker build -f Dockerfile.full \
 #     --build-arg NODE_IMAGE=artifacts.pr.by/docker-hub/node:20-bookworm-slim \
-#     --build-arg MAVEN_IMAGE=artifacts.pr.by/docker-hub/maven:3.9-eclipse-temurin-17 \
-#     --build-arg JRE_IMAGE=artifacts.pr.by/docker-hub/eclipse-temurin:17-jre \
+#     --build-arg MAVEN_IMAGE=artifacts.pr.by/docker-hub/maven:3.9-eclipse-temurin-21 \
+#     --build-arg JRE_IMAGE=artifacts.pr.by/docker-hub/eclipse-temurin:21-jre \
 #     -t swagger-editor-backend:1.0.0 .
 
 # ---- Stage 1: build frontend ----
 ARG NODE_IMAGE=node:20-bookworm-slim
-ARG MAVEN_IMAGE=maven:3.9-eclipse-temurin-17
-ARG JRE_IMAGE=eclipse-temurin:17-jre
+ARG MAVEN_IMAGE=maven:3.9-eclipse-temurin-21
+ARG JRE_IMAGE=eclipse-temurin:21-jre
 FROM ${NODE_IMAGE} AS frontend
 WORKDIR /build/frontend
 COPY frontend/package.json frontend/package-lock.json frontend/.npmrc ./

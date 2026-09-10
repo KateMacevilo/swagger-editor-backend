@@ -158,7 +158,7 @@ public class OpenApiService {
 
     private OpenAPI buildOpenApi(ProjectDTO project) {
         OpenAPI openAPI = new OpenAPI();
-        openAPI.openapi("3.0.0");
+        openAPI.openapi("3.1.0");
 
         Info info = new Info()
                 .title(project.getTitle())
@@ -252,12 +252,46 @@ public class OpenApiService {
         if (endpoint.getParameters() != null && !endpoint.getParameters().isEmpty()) {
             List<Parameter> params = new ArrayList<>();
             for (ApiParameterDTO ap : endpoint.getParameters()) {
+                // Names go into the spec as identifiers: strip any whitespace the user typed.
+                String paramName = ap.getName() != null ? ap.getName().replaceAll("\\s+", "") : null;
+                Schema<?> paramSchema = buildSchema(ap.getType(), ap.getItemsType(), ap.getFormat());
+                String type = ap.getType() != null ? ap.getType() : "string";
+                if ("integer".equals(type) || "number".equals(type)) {
+                    if (ap.getMinValue() != null && !ap.getMinValue().isBlank()) {
+                        try {
+                            paramSchema.setMinimum(new java.math.BigDecimal(ap.getMinValue().trim()));
+                        } catch (NumberFormatException ignored) {
+                        }
+                    }
+                    if (ap.getMaxValue() != null && !ap.getMaxValue().isBlank()) {
+                        try {
+                            paramSchema.setMaximum(new java.math.BigDecimal(ap.getMaxValue().trim()));
+                        } catch (NumberFormatException ignored) {
+                        }
+                    }
+                    if (ap.getPrecision() != null && !ap.getPrecision().isBlank()) {
+                        String precision = ap.getPrecision().trim();
+                        paramSchema.addExtension("x-precision", precision);
+                        String pattern = precisionToPattern(precision);
+                        if (pattern != null) paramSchema.setPattern(pattern);
+                    }
+                } else if ("string".equals(type)) {
+                    Integer minLength = parseNonNegativeInt(ap.getMinValue());
+                    if (minLength != null) paramSchema.setMinLength(minLength);
+                    Integer maxLength = parseNonNegativeInt(ap.getMaxValue());
+                    if (maxLength != null) paramSchema.setMaxLength(maxLength);
+                } else if ("array".equals(type)) {
+                    Integer minItems = parseNonNegativeInt(ap.getMinValue());
+                    if (minItems != null) paramSchema.setMinItems(minItems);
+                    Integer maxItems = parseNonNegativeInt(ap.getMaxValue());
+                    if (maxItems != null) paramSchema.setMaxItems(maxItems);
+                }
                 Parameter param = new Parameter()
-                        .name(ap.getName())
+                        .name(paramName)
                         .in(ap.getParamIn())
                         .required(Boolean.TRUE.equals(ap.getRequired()))
                         .description(ap.getDescription())
-                        .schema(buildSchema(ap.getType(), ap.getItemsType(), ap.getFormat()));
+                        .schema(paramSchema);
                 if (ap.getExample() != null) param.setExample(ap.getExample());
                 params.add(param);
             }
@@ -351,6 +385,28 @@ public class OpenApiService {
                         if (ap.getExample() == null && param.getSchema().getExample() != null) {
                             ap.setExample(param.getSchema().getExample().toString());
                         }
+                        if (param.getSchema().getMinimum() != null) {
+                            ap.setMinValue(param.getSchema().getMinimum().toPlainString());
+                        }
+                        if (param.getSchema().getMaximum() != null) {
+                            ap.setMaxValue(param.getSchema().getMaximum().toPlainString());
+                        }
+                        if (param.getSchema().getMinLength() != null) {
+                            ap.setMinValue(String.valueOf(param.getSchema().getMinLength()));
+                        }
+                        if (param.getSchema().getMaxLength() != null) {
+                            ap.setMaxValue(String.valueOf(param.getSchema().getMaxLength()));
+                        }
+                        if (param.getSchema().getMinItems() != null) {
+                            ap.setMinValue(String.valueOf(param.getSchema().getMinItems()));
+                        }
+                        if (param.getSchema().getMaxItems() != null) {
+                            ap.setMaxValue(String.valueOf(param.getSchema().getMaxItems()));
+                        }
+                        if (param.getSchema().getExtensions() != null
+                                && param.getSchema().getExtensions().get("x-precision") != null) {
+                            ap.setPrecision(param.getSchema().getExtensions().get("x-precision").toString());
+                        }
                     }
                     params.add(ap);
                 }
@@ -393,8 +449,36 @@ public class OpenApiService {
         return endpoints;
     }
 
-    private Schema<?> buildSchema(String type, String itemsType, String format) {
-        if (type == null) type = "string";
+    /**
+     * "18,2" (total digits, fraction digits) -> regex like ^-?\d{1,16}(\.\d{1,2})?$.
+     * Returns null for unparsable input.
+     */
+    /** Parses a non-negative int, null on anything invalid (used for min/max length/items). */
+    static Integer parseNonNegativeInt(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            int n = Integer.parseInt(value.trim());
+            return n >= 0 ? n : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    public static String precisionToPattern(String precision) {        String[] parts = precision.split("[,.]");
+        try {
+            int total = Integer.parseInt(parts[0].trim());
+            int fraction = parts.length > 1 ? Integer.parseInt(parts[1].trim()) : 0;
+            if (total < 1 || fraction < 0) return null;
+            if (fraction >= total) fraction = total - 1;
+            return fraction > 0
+                    ? "^-?\\d{1," + (total - fraction) + "}(\\.\\d{1," + fraction + "})?$"
+                    : "^-?\\d{1," + total + "}$";
+        } catch (NumberFormatException | ArrayIndexOutOfBoundsException e) {
+            return null;
+        }
+    }
+
+    private Schema<?> buildSchema(String type, String itemsType, String format) {        if (type == null) type = "string";
         Schema<?> schema;
         switch (type) {
             case "integer" -> schema = new IntegerSchema();

@@ -15,6 +15,9 @@ function ComboInput({ value, onChange, options, placeholder, className = '', pla
   const tone = plain
     ? 'border-gray-300 bg-white'
     : 'border-blue-300 bg-blue-50'
+  // Width grows with the value so full component names are always visible
+  // (a truncated input would also trigger the browser's native value tooltip).
+  const widthCh = Math.max(12, String(value || '').length + 3)
   return (
     <div className={`relative ${className}`}>
       <input
@@ -24,7 +27,8 @@ function ComboInput({ value, onChange, options, placeholder, className = '', pla
         onFocus={() => setOpen(true)}
         onChange={e => { onChange(e.target.value); setOpen(true) }}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
-        className={`w-full px-2 py-1 border rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 ${tone}`}
+        style={{ width: `${widthCh}ch`, maxWidth: '100%' }}
+        className={`px-2 py-1 border rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 ${tone}`}
       />
       {open && filtered.length > 0 && (
         <ul className="absolute z-30 left-0 top-full mt-1 w-72 max-h-52 overflow-y-auto bg-white border border-gray-300 rounded shadow-md text-xs font-mono">
@@ -43,11 +47,15 @@ function ComboInput({ value, onChange, options, placeholder, className = '', pla
   )
 }
 
-function FieldRow({ field, onChange, onRemove, schemas, depth = 0 }) {
+function FieldRow({ field, onChange, onRemove, schemas, onSchemasChange, depth = 0 }) {
   const indent = depth * 16
   const componentNames = Object.keys(schemas || {}).sort((a, b) => a.localeCompare(b))
   const refNameOf = ref => (ref || '').startsWith(REF_PREFIX) ? ref.slice(REF_PREFIX.length) : ''
   const [showRefPreview, setShowRefPreview] = useState(false)
+  const [showItemsPreview, setShowItemsPreview] = useState(false)
+  const itemsRefName = (field.items?.$ref || '').startsWith(REF_PREFIX)
+    ? field.items.$ref.slice(REF_PREFIX.length)
+    : (field.items?.$ref || '')
 
   return (
     <div style={{ marginLeft: indent }}>
@@ -74,7 +82,7 @@ function FieldRow({ field, onChange, onRemove, schemas, depth = 0 }) {
               onChange={v => onChange({ ...field, ref: v })}
               options={componentNames}
               placeholder="имя компонента…"
-              className="w-44 shrink-0"
+              className="shrink-0"
             />
             {field.ref && schemas && field.ref in schemas && (
               <button
@@ -117,19 +125,61 @@ function FieldRow({ field, onChange, onRemove, schemas, depth = 0 }) {
           fields={field.properties || []}
           onChange={props => onChange({ ...field, properties: props })}
           schemas={schemas}
+          onSchemasChange={onSchemasChange}
           depth={depth + 1}
         />
       )}
 
       {field.type === 'array' && (
-        <div style={{ marginLeft: (depth + 1) * 16 }} className="mb-1 flex items-center gap-2">
-          <span className="text-xs text-gray-500">items:</span>
-          <ComboInput
-            value={field.items?.$ref || field.items?.type || 'string'}
-            onChange={v => onChange({ ...field, items: v.startsWith(REF_PREFIX) ? { $ref: v } : { type: v } })}
-            options={[...TYPES, ...componentNames.map(n => REF_PREFIX + n)]}
-            className="w-44 shrink-0"
-          />
+        <div style={{ marginLeft: (depth + 1) * 16 }} className="mb-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-500">items:</span>
+            <ComboInput
+              value={field.items?.$ref || field.items?.type || 'string'}
+              onChange={v => onChange({ ...field, items: v.startsWith(REF_PREFIX) ? { $ref: v } : { type: v } })}
+              options={[...TYPES, ...componentNames.map(n => REF_PREFIX + n)]}
+              className="shrink-0"
+            />
+            {field.items && !field.items.$ref && field.items.type === 'object' && onSchemasChange && (
+              <button
+                type="button"
+                onClick={() => {
+                  const name = window.prompt('Имя компонента для элементов массива (например, Product):')
+                  if (!name || !name.trim()) return
+                  const key = name.trim()
+                  if (schemas?.[key] && !confirm(`Компонент «${key}» уже существует. Перезаписать?`)) return
+                  onSchemasChange({ ...(schemas || {}), [key]: JSON.stringify(field.items) })
+                  onChange({ ...field, items: { $ref: REF_PREFIX + key } })
+                }}
+                className="text-[11px] text-blue-600 hover:underline shrink-0"
+              >
+                сохранить как компонент
+              </button>
+            )}
+            {field.items?.$ref && itemsRefName && schemas?.[itemsRefName] && (
+              <button
+                type="button"
+                onClick={() => setShowItemsPreview(v => !v)}
+                className="text-[11px] text-blue-600 hover:underline shrink-0"
+              >
+                {showItemsPreview ? 'скрыть' : 'структура'}
+              </button>
+            )}
+          </div>
+          {showItemsPreview && field.items?.$ref && itemsRefName && schemas?.[itemsRefName] && (
+            <div className="border border-blue-100 rounded bg-white px-2 py-1 mb-1">
+              <PreviewFields fields={schemaToFields(safeParse(schemas[itemsRefName]))} schemas={schemas} />
+            </div>
+          )}
+          {field.items && !field.items.$ref && field.items.type === 'object' && (
+            <ObjectFields
+              fields={schemaToFields(field.items)}
+              onChange={props => onChange({ ...field, items: fieldsToSchema(props) })}
+              schemas={schemas}
+              onSchemasChange={onSchemasChange}
+              depth={depth + 1}
+            />
+          )}
         </div>
       )}
 
@@ -142,7 +192,30 @@ function FieldRow({ field, onChange, onRemove, schemas, depth = 0 }) {
   )
 }
 
-function ObjectFields({ fields, onChange, schemas, depth }) {
+/** Infers a JSON Schema (our subset) from an example JSON value */
+function jsonValueToSchema(value) {
+  if (value === null) return { type: 'string' }
+  if (Array.isArray(value)) {
+    return { type: 'array', items: value.length ? jsonValueToSchema(value[0]) : { type: 'string' } }
+  }
+  switch (typeof value) {
+    case 'string':
+      return value ? { type: 'string', example: value } : { type: 'string' }
+    case 'number':
+      return { type: Number.isInteger(value) ? 'integer' : 'number', example: value }
+    case 'boolean':
+      return { type: 'boolean', example: value }
+    case 'object': {
+      const properties = {}
+      for (const [k, v] of Object.entries(value)) properties[k] = jsonValueToSchema(v)
+      return { type: 'object', properties }
+    }
+    default:
+      return { type: 'string' }
+  }
+}
+
+function ObjectFields({ fields, onChange, schemas, onSchemasChange, depth }) {
   function addField() {
     onChange([...fields, { name: '', type: 'string', required: false, description: '' }])
   }
@@ -166,6 +239,7 @@ function ObjectFields({ fields, onChange, schemas, depth }) {
           onChange={v => updateField(i, v)}
           onRemove={() => removeField(i)}
           schemas={schemas}
+          onSchemasChange={onSchemasChange}
           depth={depth}
         />
       ))}
@@ -260,10 +334,12 @@ function fieldsToSchema(fields) {
   const required = []
 
   for (const f of fields) {
-    if (!f.name) continue
+    // Property names are identifiers in the spec: strip any whitespace the user typed.
+    const name = (f.name || '').replace(/\s+/g, '')
+    if (!name) continue
     if (f.type === '$ref') {
-      properties[f.name] = { $ref: REF_PREFIX + (f.ref || '') }
-      if (f.required) required.push(f.name)
+      properties[name] = { $ref: REF_PREFIX + (f.ref || '') }
+      if (f.required) required.push(name)
       continue
     }
     const prop = { type: f.type }
@@ -279,8 +355,8 @@ function fieldsToSchema(fields) {
       prop.properties = nested.properties
       if (nested.required?.length) prop.required = nested.required
     }
-    properties[f.name] = prop
-    if (f.required) required.push(f.name)
+    properties[name] = prop
+    if (f.required) required.push(name)
   }
 
   return { type: 'object', properties, ...(required.length ? { required } : {}) }
@@ -327,6 +403,8 @@ function schemaToFields(schema) {
 export default function SchemaBuilder({ value, onChange, schemas, onSchemasChange }) {
   const [view, setView] = useState('builder')
   const [formatRaw, setFormatRaw] = useState(false)
+  const [showExampleImport, setShowExampleImport] = useState(false)
+  const [exampleJson, setExampleJson] = useState('')
 
   const parsed = safeParse(value)
   const refName = parsed && typeof parsed.$ref === 'string' && parsed.$ref.startsWith(REF_PREFIX)
@@ -379,6 +457,29 @@ export default function SchemaBuilder({ value, onChange, schemas, onSchemasChang
     onChange(JSON.stringify({ $ref: REF_PREFIX + key }))
   }
 
+  function applyExampleJson() {
+    let parsed
+    try {
+      parsed = JSON.parse(exampleJson)
+    } catch {
+      alert('Невалидный JSON. Проверьте, что вставлен полный JSON-объект (с кавычками у ключей).')
+      return
+    }
+    if (fields.length > 0 && !confirm('Текущие поля схемы будут заменены полями из примера. Продолжить?')) return
+    handleFieldsChange(schemaToFields(jsonValueToSchema(parsed)))
+    setShowExampleImport(false)
+    setExampleJson('')
+  }
+
+  function readExampleFile(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setExampleJson(String(reader.result || ''))
+    reader.readAsText(file)
+    e.target.value = ''
+  }
+
   const hasComponents = (schemas && Object.keys(schemas).length > 0) || refName !== null
   const sortedNames = Object.keys(schemas || {}).sort((a, b) => a.localeCompare(b))
   const [query, setQuery] = useState('')
@@ -410,7 +511,6 @@ export default function SchemaBuilder({ value, onChange, schemas, onSchemasChang
             onChange={handleRefSelect}
             options={sortedNames}
             placeholder="— нет (inline-схема) —"
-            className="w-64"
             plain
           />
           {isRef && (
@@ -515,7 +615,54 @@ export default function SchemaBuilder({ value, onChange, schemas, onSchemasChang
           )}
         </div>
       ) : (
-        <ObjectFields fields={fields} onChange={handleFieldsChange} schemas={schemas} depth={0} />
+        <div>
+          <div className="flex items-center gap-3 mb-2">
+            <button
+              type="button"
+              onClick={() => setShowExampleImport(v => !v)}
+              className="text-xs text-blue-600 hover:text-blue-800"
+            >
+              ↑ загрузить пример JSON
+            </button>
+          </div>
+          {showExampleImport && (
+            <div className="border border-blue-200 rounded bg-white p-2 mb-2">
+              <textarea
+                value={exampleJson}
+                onChange={e => setExampleJson(e.target.value)}
+                rows={6}
+                placeholder='Вставьте пример тела запроса/ответа: {"id": 1, "name": "Иван"}'
+                className="w-full px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+              />
+              <div className="flex items-center gap-3 mt-1">
+                <button
+                  type="button"
+                  onClick={applyExampleJson}
+                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Применить
+                </button>
+                <label className="text-xs text-blue-600 hover:underline cursor-pointer">
+                  или выбрать файл…
+                  <input
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    onChange={readExampleFile}
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => { setShowExampleImport(false); setExampleJson('') }}
+                  className="text-xs text-gray-500 hover:underline"
+                >
+                  Отмена
+                </button>
+              </div>
+            </div>
+          )}
+          <ObjectFields fields={fields} onChange={handleFieldsChange} schemas={schemas} onSchemasChange={onSchemasChange} depth={0} />
+        </div>
       )}
     </div>
   )

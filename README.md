@@ -1,6 +1,6 @@
 # OpenAPI Visual Editor
 
-Full-stack веб-приложение для визуального создания, редактирования и предпросмотра спецификаций **OpenAPI 3.0.0 (Swagger)**.
+Full-stack веб-приложение для визуального создания, редактирования и предпросмотра спецификаций **OpenAPI 3.1.0 (Swagger)**.
 
 - **Главная страница** — список проектов, создание нового проекта, импорт готового OpenAPI-файла (JSON/YAML).
 - **Редактор** — трёхпанельный интерфейс:
@@ -127,6 +127,6 @@ Smoke-тест загрузки контекста + регрессионный 
 
 ## Технологии
 
-**Backend:** Java 17, Spring Boot 3.2.3, GitLab REST API (v4), swagger-models / swagger-core / swagger-parser, Jackson YAML, Lombok, Maven.
+**Backend:** Java 21, Spring Boot 3.2.3, GitLab REST API (v4), swagger-models / swagger-core / swagger-parser, Jackson YAML, Lombok, Maven.
 
 **Frontend:** React 18, React Router 6, Vite 5, Tailwind CSS 3, swagger-ui-react, Axios.

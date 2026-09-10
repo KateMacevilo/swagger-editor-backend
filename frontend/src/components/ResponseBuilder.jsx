@@ -34,9 +34,32 @@ const CODE_LABELS = {
   '510': 'Not Extended', '511': 'Network Authentication Required'
 }
 
-export default function ResponseBuilder({ responses, onChange, schemas, onSchemasChange }) {
+export default function ResponseBuilder({ responses, onChange, schemas, onSchemasChange, endpoints, currentEndpointId }) {
   function add() {
     onChange([...responses, { statusCode: '200', description: 'OK', bodySchema: '' }])
+  }
+
+  // Catalog of typical error responses reused across endpoints: collect 4xx/5xx
+  // from all other endpoints, deduplicated by status+description+body.
+  const catalog = []
+  const seen = new Set()
+  for (const ep of endpoints || []) {
+    if (ep.id === currentEndpointId) continue
+    for (const r of ep.responses || []) {
+      const code = parseInt(r.statusCode)
+      if (!(code >= 400 && code <= 599)) continue
+      const key = `${r.statusCode}|${r.description || ''}|${r.bodySchema || ''}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      catalog.push(r)
+    }
+  }
+  catalog.sort((a, b) => String(a.statusCode).localeCompare(String(b.statusCode)))
+
+  function addFromCatalog(idx) {
+    const picked = catalog[idx]
+    if (!picked) return
+    onChange([...responses, { ...picked, headers: { ...(picked.headers || {}) } }])
   }
 
   function update(idx, field, val) {
@@ -55,11 +78,11 @@ export default function ResponseBuilder({ responses, onChange, schemas, onSchema
 
       {responses.map((resp, idx) => (
         <div key={idx} className="border border-gray-200 rounded-lg p-3 mb-3 bg-white">
-          <div className="flex items-center gap-2 mb-3">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
             <select
               value={resp.statusCode}
               onChange={e => update(idx, 'statusCode', e.target.value)}
-              className="px-2 py-1.5 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="px-2 py-1.5 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 shrink-0"
             >
               {!COMMON_CODES.includes(resp.statusCode) && resp.statusCode && (
                 <option value={resp.statusCode}>{resp.statusCode} (custom)</option>
@@ -74,9 +97,9 @@ export default function ResponseBuilder({ responses, onChange, schemas, onSchema
               onChange={e => update(idx, 'description', e.target.value)}
               placeholder="Описание ответа (поддерживается Markdown)"
               rows={1}
-              className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
+              className="flex-1 min-w-36 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 resize-y min-h-[34px]"
             />
-            <button onClick={() => remove(idx)} className="text-red-400 hover:text-red-600 text-sm">✕</button>
+            <button onClick={() => remove(idx)} className="text-red-400 hover:text-red-600 text-sm shrink-0">✕</button>
           </div>
 
           {resp.statusCode !== '204' && (
@@ -93,12 +116,28 @@ export default function ResponseBuilder({ responses, onChange, schemas, onSchema
         </div>
       ))}
 
-      <button
-        onClick={add}
-        className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-      >
-        + Добавить ответ
-      </button>
+      <div className="flex items-center gap-4 flex-wrap">
+        <button
+          onClick={add}
+          className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+        >
+          + Добавить ответ
+        </button>
+        {catalog.length > 0 && (
+          <select
+            value=""
+            onChange={e => { addFromCatalog(Number(e.target.value)); e.target.value = '' }}
+            className="px-2 py-1 border border-gray-300 rounded text-xs text-blue-700 bg-blue-50 focus:outline-none focus:ring-1 focus:ring-blue-400"
+          >
+            <option value="">+ Типовая ошибка из других эндпоинтов…</option>
+            {catalog.map((r, i) => (
+              <option key={i} value={i}>
+                {r.statusCode} {CODE_LABELS[r.statusCode] || ''} — {(r.description || '').slice(0, 60)}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
     </div>
   )
 }
@@ -135,15 +174,15 @@ function HeadersEditor({ headers, onChange }) {
       </div>
       {pairs.length === 0 && <p className="text-[11px] text-gray-400">Нет заголовков</p>}
       {pairs.map(([name, description], idx) => (
-        <div key={idx} className="flex items-center gap-2 mb-1">
+        <div key={idx} className="flex items-center gap-2 mb-1 flex-wrap">
           <input value={name} onChange={e => updatePair(idx, 'name', e.target.value)}
             placeholder="X-Request-Id"
-            className="w-40 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            className="w-40 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 shrink-0" />
           <input value={description} onChange={e => updatePair(idx, 'description', e.target.value)}
             placeholder="Описание заголовка"
-            className="flex-1 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
+            className="flex-1 min-w-36 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400" />
           <button type="button" onClick={() => removeHeader(name)}
-            className="text-red-400 hover:text-red-600 text-xs px-1">✕</button>
+            className="text-red-400 hover:text-red-600 text-xs px-1 shrink-0">✕</button>
         </div>
       ))}
     </div>

@@ -2,7 +2,7 @@
 
 ## Обзор проекта
 
-Full-stack веб-приложение для визуального создания, редактирования и предпросмотра спецификаций **OpenAPI 3.0.0 (Swagger)**.
+Full-stack веб-приложение для визуального создания, редактирования и предпросмотра спецификаций **OpenAPI 3.1.0 (Swagger)**.
 
 - **Главная страница** (`/`) — список проектов, создание нового проекта, импорт готового OpenAPI-файла (JSON/YAML).
 - **Редактор** (`/project/:projectId`) — трёхпанельный интерфейс:
@@ -20,7 +20,7 @@ Full-stack веб-приложение для визуального созда�
 
 ### Backend
 
-- **Java 17** (target для сборки), Spring Boot 3.2.3 (`spring-boot-starter-web`, `spring-boot-starter-validation`).
+- **Java 21** (target для сборки), Spring Boot 3.2.3 (`spring-boot-starter-web`, `spring-boot-starter-validation`).
 - **GitLab REST API (v4)** — единственное хранилище проектов.
 - **Swagger ecosystem**:
   - `io.swagger.core.v3:swagger-models:2.2.20` — объектная модель OpenAPI 3.0.
@@ -46,7 +46,7 @@ Full-stack веб-приложение для визуального созда�
 ```
 swagger-editor-backend/
 ├── pom.xml                              # Корневой Maven POM (backend)
-├── Dockerfile                           # Контейнерный образ для k8s (eclipse-temurin:17-jre)
+├── Dockerfile                           # Контейнерный образ для k8s (eclipse-temurin:21-jre)
 ├── Dockerfile.full                      # Multi-stage: собирает frontend+backend внутри Docker
 ├── Dockerfile.prod-dist                 # Без npm-стадии: dist собирается dev-образом фронтенда заранее
 ├── certs/                               # *.crt → импорт в truststore JRE (корпоративный CA GitLab)
@@ -171,7 +171,7 @@ docker run -d --name swagger-editor -p 8080:8080 \
   swagger-editor-backend:1.0.0
 ```
 
-Базовый образ — `eclipse-temurin:17-jre`, порт 8080. `Dockerfile` копирует готовый JAR и сам ничего не собирает.
+Базовый образ — `eclipse-temurin:21-jre`, порт 8080. `Dockerfile` копирует готовый JAR и сам ничего не собирает.
 
 ### Корпоративный сертификат GitLab (PKIX/SSLHandshake)
 
@@ -203,8 +203,8 @@ docker run --rm -v "$PWD/frontend:/fe" swagger-editor-backend-frontend sh -c \
 mkdir -p src/main/resources/static && cp -r frontend/dist/* src/main/resources/static/
 # 3) сборка; базовые образы можно подставить из внутреннего registry
 docker build -f Dockerfile.prod-dist \
-  --build-arg MAVEN_IMAGE=<registry>/maven:3.9-eclipse-temurin-17 \
-  --build-arg JRE_IMAGE=<registry>/eclipse-temurin:17-jre \
+  --build-arg MAVEN_IMAGE=<registry>/maven:3.9-eclipse-temurin-21 \
+  --build-arg JRE_IMAGE=<registry>/eclipse-temurin:21-jre \
   -t swagger-editor:1.0.0 .
 ```
 
@@ -304,7 +304,7 @@ kubectl port-forward svc/swagger-editor 8080:8080
 | `ImagePullBackOff` | Неверный `image.repository`/tag, приватный registry без `imagePullSecrets`, в air-gapped-кластере образ не загружен на ноду |
 | 503 «GitLab integration is not configured» | Не заданы `GITLAB_TOKEN`/`GITLAB_PROJECT` (пустые `gitlabToken`/`gitlab.project` в values — secret/configmap не собрались) |
 | 404 «Project Not Found» от GitLab | Неверный `gitlab.project` (должен быть путь `group/project`, не URL и не `.git`), либо у токена нет прав на проект |
-| `PKIX path building failed` / `SSLHandshakeException` к GitLab | GitLab за корпоративным CA. Без пересборки образа: `kubectl create configmap gitlab-ca --from-file=prior-ca.crt=<crt>` + `gitlabCa.enabled=true` в values (initContainer соберёт truststore и подключит его через `JAVA_TOOL_OPTIONS`). С пересборкой: положить `.crt` в `certs/` — Dockerfile импортируют его в truststore JRE |
+| `PKIX path building failed` / `SSLHandshakeException` к GitLab | GitLab за корпоративным CA. Без пересборки образа: положить `.crt` в `chart/certs/` + `gitlabCa.enabled=true` в values — helm сам создаст ConfigMap, initContainer импортирует сертификат в truststore и подключит его через `JAVA_TOOL_OPTIONS` (поды перезапускаются при смене сертификата). С пересборкой: положить `.crt` в корневой `certs/` — Dockerfile импортируют его в truststore JRE |
 | Долгий старт списка проектов | Норма: `findAll()` делает N+1 запросов к GitLab API (дерево + каждый `openapi.json`) |
 | Ingress 502 | Под не ready — смотреть `kubectl logs`; проверить `service.port` (8080) |
 
@@ -394,7 +394,7 @@ Request body и response body хранятся как **JSON-строки** вн
 
 ### Генерация и парсинг OpenAPI
 
-- Генерация: `OpenApiService.toJson/toYaml` собирают объект `OpenAPI` из `swagger-models` (версия спецификации фиксирована — `3.0.0`) и сериализуют через `io.swagger.v3.core.util.Json` / `Yaml`. Если у эндпоинта нет ответов, добавляется дефолтный `200 OK`. Поддерживаются 7 HTTP-методов: GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD (`OpenApiService.setOperation`). Если заданы `securityAuthorizationUrl`/`securityScopes`, в `components.securitySchemes` добавляется схема `default` (oauth2, implicit flow) — как в исходном SwaggerConfiguration java-проекта; `securityEnabled: true` добавляет глобальный `security: [{default: []}]`, а `EndpointDTO.secured` — security на уровне операции (эндпоинт можно сделать необязательным).
+- Генерация: `OpenApiService.toJson/toYaml` собирают объект `OpenAPI` из `swagger-models` (версия спецификации фиксирована — `3.1.0`) и сериализуют через `io.swagger.v3.core.util.Json` / `Yaml`. Если у эндпоинта нет ответов, добавляется дефолтный `200 OK`. Поддерживаются 7 HTTP-методов: GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD (`OpenApiService.setOperation`). Если заданы `securityAuthorizationUrl`/`securityScopes`, в `components.securitySchemes` добавляется схема `default` (oauth2, implicit flow) — как в исходном SwaggerConfiguration java-проекта; `securityEnabled: true` добавляет глобальный `security: [{default: []}]`, а `EndpointDTO.secured` — security на уровне операции (эндпоинт можно сделать необязательным).
 - Парсинг: файлы Swagger 2.0 (`"swagger":"2.0"`, например экспорт ReferenceData) сначала конвертируются в OpenAPI 3 через `SwaggerConverter`, затем `OpenAPIV3Parser` **без** `resolveFully` — `$ref` на `components.schemas` сохраняются ссылками: компоненты копируются в `ProjectDTO.schemas`, а тела запросов/ответов хранят `{"$ref": "#/components/schemas/<name>"}`. При регенерации компоненты возвращаются в `components.schemas`, поэтому схемы не дублируются в каждом эндпоинте. Раньше использовался `resolveFully(true)`, который инлайнил компоненты и раздувал спецификацию копиями.
 - Слаг проекта (`toSlug`): нижний регистр, неалфавитно-цифровые символы → `-`, крайние дефисы удаляются; пустое название → `untitled-project`, пустой результат очистки → `project`. Транслитерации кириллицы нет: русское название даст дефолтный `project`.
 

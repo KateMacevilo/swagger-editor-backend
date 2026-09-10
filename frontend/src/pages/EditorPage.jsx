@@ -433,7 +433,9 @@ export default function EditorPage() {
               <ResponseBuilder responses={form.responses || []}
                 onChange={responses => setForm({ ...form, responses })}
                 schemas={project.schemas}
-                onSchemasChange={updateSchemas} />
+                onSchemasChange={updateSchemas}
+                endpoints={project.endpoints || []}
+                currentEndpointId={form.id} />
             )}
 
             <div className="flex gap-3 pt-2">

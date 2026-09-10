@@ -20,4 +20,9 @@ public class ApiParameterDTO {
     private String example;
     private String defaultValue;
     private String format;
+    /** Numeric bounds: minimum / maximum value (integer/number parameters). */
+    private String minValue;
+    private String maxValue;
+    /** Decimal precision in "total,fraction" form, e.g. "18,2" (number parameters). */
+    private String precision;
 }

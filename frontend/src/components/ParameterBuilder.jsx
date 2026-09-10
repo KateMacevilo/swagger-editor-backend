@@ -63,6 +63,33 @@ export default function ParameterBuilder({ parameters, onChange }) {
                 {['string','integer','number','boolean'].map(t => <option key={t} value={t}>items: {t}</option>)}
               </select>
             )}
+            {(param.type === 'integer' || param.type === 'number' || param.type === 'string' || param.type === 'array') && (
+              <>
+                <input
+                  value={param.minValue || ''}
+                  onChange={e => update(idx, 'minValue', e.target.value)}
+                  placeholder="min"
+                  title={param.type === 'string' ? 'Минимальная длина (символов)' : param.type === 'array' ? 'Минимальное кол-во элементов' : 'Минимальное значение'}
+                  className="w-16 px-2 py-1.5 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                <input
+                  value={param.maxValue || ''}
+                  onChange={e => update(idx, 'maxValue', e.target.value)}
+                  placeholder="max"
+                  title={param.type === 'string' ? 'Максимальная длина (символов)' : param.type === 'array' ? 'Максимальное кол-во элементов' : 'Максимальное значение'}
+                  className="w-16 px-2 py-1.5 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+                />
+                {param.type === 'number' && (
+                  <input
+                    value={param.precision || ''}
+                    onChange={e => update(idx, 'precision', e.target.value)}
+                    placeholder="18,2"
+                    title="Размерность: всего цифр, после запятой (например, 18,2)"
+                    className="w-16 px-2 py-1.5 border border-gray-300 rounded text-sm font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  />
+                )}
+              </>
+            )}
             <label className="flex items-center gap-1 text-sm text-gray-600">
               <input
                 type="checkbox"

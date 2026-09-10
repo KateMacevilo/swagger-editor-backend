@@ -326,6 +326,7 @@ function schemaToFields(schema) {
  */
 export default function SchemaBuilder({ value, onChange, schemas, onSchemasChange }) {
   const [view, setView] = useState('builder')
+  const [formatRaw, setFormatRaw] = useState(false)
 
   const parsed = safeParse(value)
   const refName = parsed && typeof parsed.$ref === 'string' && parsed.$ref.startsWith(REF_PREFIX)
@@ -442,18 +443,38 @@ export default function SchemaBuilder({ value, onChange, schemas, onSchemasChang
           />
         </div>
       ) : view === 'raw' ? (
-        <textarea
-          value={effectiveValue || ''}
-          onChange={e => {
-            emit(e.target.value)
-            try {
-              setFields(schemaToFields(JSON.parse(e.target.value)))
-            } catch {}
-          }}
-          rows={8}
-          placeholder='{"type":"object","properties":{"id":{"type":"integer"}}}'
-          className="w-full px-3 py-2 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
-        />
+        <div>
+          <label className="flex items-center gap-1.5 mb-1 text-xs text-gray-600 select-none">
+            <input
+              type="checkbox"
+              checked={formatRaw}
+              onChange={e => {
+                const on = e.target.checked
+                setFormatRaw(on)
+                if (on && effectiveValue) {
+                  // One-shot pretty-print of the current content; invalid JSON is left as-is.
+                  try {
+                    const pretty = JSON.stringify(JSON.parse(effectiveValue), null, 2)
+                    if (pretty !== effectiveValue) emit(pretty)
+                  } catch {}
+                }
+              }}
+            />
+            форматировать (отступы и переносы)
+          </label>
+          <textarea
+            value={effectiveValue || ''}
+            onChange={e => {
+              emit(e.target.value)
+              try {
+                setFields(schemaToFields(JSON.parse(e.target.value)))
+              } catch {}
+            }}
+            rows={8}
+            placeholder='{"type":"object","properties":{"id":{"type":"integer"}}}'
+            className="w-full px-3 py-2 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 bg-white"
+          />
+        </div>
       ) : view === 'components' ? (
         <div>
           <input

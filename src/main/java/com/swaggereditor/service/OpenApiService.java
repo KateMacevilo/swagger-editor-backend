@@ -337,9 +337,20 @@ public class OpenApiService {
                     ap.setParamIn(param.getIn());
                     ap.setRequired(Boolean.TRUE.equals(param.getRequired()));
                     ap.setDescription(param.getDescription());
+                    if (param.getExample() != null) {
+                        ap.setExample(param.getExample().toString());
+                    } else if (param.getExamples() != null && !param.getExamples().isEmpty()) {
+                        // Named examples: keep the first one's value.
+                        io.swagger.v3.oas.models.examples.Example ex =
+                                param.getExamples().values().iterator().next();
+                        if (ex != null && ex.getValue() != null) ap.setExample(ex.getValue().toString());
+                    }
                     if (param.getSchema() != null) {
                         ap.setType(param.getSchema().getType() != null ? param.getSchema().getType() : "string");
                         ap.setFormat(param.getSchema().getFormat());
+                        if (ap.getExample() == null && param.getSchema().getExample() != null) {
+                            ap.setExample(param.getSchema().getExample().toString());
+                        }
                     }
                     params.add(ap);
                 }

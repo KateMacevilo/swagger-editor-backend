@@ -472,9 +472,10 @@ export default function EditorPage() {
       {/* Project Edit Modal */}
       {showProjectEdit && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-          onClick={() => setShowProjectEdit(false)}>
+          onMouseDown={() => setShowProjectEdit(false)}>
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto space-y-3"
-            onClick={e => e.stopPropagation()}>
+            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}>
             <h2 className="text-lg font-semibold">Настройки проекта</h2>
             {[
               ['Название', 'title', true],
@@ -531,9 +532,10 @@ export default function EditorPage() {
       {/* Components Modal */}
       {showComponents && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50"
-          onClick={() => setShowComponents(false)}>
+          onMouseDown={() => setShowComponents(false)}>
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto space-y-3"
-            onClick={e => e.stopPropagation()}>
+            onClick={e => e.stopPropagation()}
+            onMouseDown={e => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Компоненты схем ({Object.keys(project.schemas || {}).length})</h2>
               <div className="flex items-center gap-3">

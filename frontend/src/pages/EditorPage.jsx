@@ -54,6 +54,7 @@ export default function EditorPage() {
   const [showComponents, setShowComponents] = useState(false)
   const [componentQuery, setComponentQuery] = useState('')
   const [previewWidth, setPreviewWidth] = useState(42)
+  const [panelWidth, setPanelWidth] = useState(256)
 
   const debounceRef = useRef(null)
 
@@ -129,6 +130,25 @@ export default function EditorPage() {
     document.addEventListener('mouseup', onUp)
   }
 
+  /** Drag the splitter between the endpoints list and the editor to resize the left panel. */
+  function startPanelDrag(e) {
+    e.preventDefault()
+    const onMove = ev => {
+      const px = Math.min(560, Math.max(180, ev.clientX))
+      setPanelWidth(px)
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+
   /** Rewrite {"$ref": "#/components/schemas/<oldName>"} to the new name in a JSON string. */
   function rewriteRefs(json, oldName, newName) {
     if (!json || !json.includes('#/components/schemas/')) return json
@@ -178,7 +198,8 @@ export default function EditorPage() {
   async function handleSaveEndpoint(e) {
     e.preventDefault()
     if (!form.path || !form.method) return
-    const endpoint = { ...form }
+    // Paths are URL identifiers: trim stray (e.g. trailing) whitespace before storing.
+    const endpoint = { ...form, path: form.path.trim() }
     if (isNew) {
       updateEndpoints(prev => [...prev, endpoint])
     } else {
@@ -255,7 +276,7 @@ export default function EditorPage() {
     <div className="flex h-[calc(100vh-56px)] overflow-hidden">
 
       {/* LEFT PANEL */}
-      <aside className="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+      <aside className="bg-white flex flex-col flex-shrink-0" style={{ width: `${panelWidth}px` }}>
         <div className="p-3 border-b border-gray-200">
           <Link to="/" className="text-xs text-gray-400 hover:text-blue-600 transition">← Все проекты</Link>
           <div className="flex items-center justify-between mt-2">
@@ -318,6 +339,11 @@ export default function EditorPage() {
           </button>
         </div>
       </aside>
+
+      {/* Splitter: left panel resize */}
+      <div className="w-1.5 bg-gray-200 hover:bg-blue-400 active:bg-blue-500 cursor-col-resize flex-shrink-0 transition-colors"
+        onMouseDown={startPanelDrag}
+        title="Потяните, чтобы изменить ширину панели эндпоинтов" />
 
       {/* CENTER PANEL */}
       <main className="flex-1 overflow-y-auto bg-gray-50 border-r border-gray-200">

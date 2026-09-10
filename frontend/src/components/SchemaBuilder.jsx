@@ -102,13 +102,83 @@ function FieldRow({ field, onChange, onRemove, schemas, onSchemasChange, depth =
           rows={1}
           className="flex-1 min-w-36 px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-400 resize-y min-h-[26px]"
         />
-        <input
-          type="text"
+        <textarea
           value={field.example || ''}
           onChange={e => onChange({ ...field, example: e.target.value })}
           placeholder="example"
-          className="w-24 shrink-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+          rows={1}
+          className="w-24 shrink-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400 resize min-h-[26px]"
         />
+        {(field.type === 'integer' || field.type === 'number') && (
+          <>
+            <input
+              type="text"
+              value={field.minValue || ''}
+              onChange={e => onChange({ ...field, minValue: e.target.value })}
+              placeholder="min"
+              title="Минимальное значение"
+              className="w-14 shrink-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+            <input
+              type="text"
+              value={field.maxValue || ''}
+              onChange={e => onChange({ ...field, maxValue: e.target.value })}
+              placeholder="max"
+              title="Максимальное значение"
+              className="w-14 shrink-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </>
+        )}
+        {field.type === 'number' && (
+          <input
+            type="text"
+            value={field.precision || ''}
+            onChange={e => onChange({ ...field, precision: e.target.value })}
+            placeholder="18,2"
+            title="Разрядность: всего цифр, после запятой (например 18,2). Добавит pattern в спецификацию."
+            className="w-14 shrink-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+          />
+        )}
+        {field.type === 'string' && (
+          <>
+            <input
+              type="text"
+              value={field.minValue || ''}
+              onChange={e => onChange({ ...field, minValue: e.target.value })}
+              placeholder="min len"
+              title="Минимальная длина (символов)"
+              className="w-14 shrink-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+            <input
+              type="text"
+              value={field.maxValue || ''}
+              onChange={e => onChange({ ...field, maxValue: e.target.value })}
+              placeholder="max len"
+              title="Максимальная длина (символов)"
+              className="w-14 shrink-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </>
+        )}
+        {field.type === 'array' && (
+          <>
+            <input
+              type="text"
+              value={field.minValue || ''}
+              onChange={e => onChange({ ...field, minValue: e.target.value })}
+              placeholder="min n"
+              title="Минимальное количество элементов"
+              className="w-14 shrink-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+            <input
+              type="text"
+              value={field.maxValue || ''}
+              onChange={e => onChange({ ...field, maxValue: e.target.value })}
+              placeholder="max n"
+              title="Максимальное количество элементов"
+              className="w-14 shrink-0 px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-400"
+            />
+          </>
+        )}
         <label className="flex items-center gap-1 text-xs text-gray-600 whitespace-nowrap shrink-0">
           <input
             type="checkbox"
@@ -329,6 +399,24 @@ function schemaSummary(json) {
 }
 
 /** Converts our internal fields array to a JSON Schema map */
+/** "18,2" (total,fraction digits) -> ^-?\d{1,16}(\.\d{1,2})?$ ; null if unparsable */
+function precisionToPattern(p) {
+  const parts = String(p).split(/[,.]/)
+  const total = parseInt(parts[0], 10)
+  let fraction = parts.length > 1 ? parseInt(parts[1], 10) : 0
+  if (!Number.isInteger(total) || total < 1 || !Number.isInteger(fraction) || fraction < 0) return null
+  if (fraction >= total) fraction = total - 1
+  return fraction > 0
+    ? `^-?\\d{1,${total - fraction}}(\\.\\d{1,${fraction}})?$`
+    : `^-?\\d{1,${total}}$`
+}
+
+function parseNonNegativeInt(v) {
+  if (v === undefined || v === null || v === '') return null
+  const n = parseInt(String(v).trim(), 10)
+  return Number.isInteger(n) && n >= 0 && String(n) === String(v).trim() ? n : null
+}
+
 function fieldsToSchema(fields) {
   const properties = {}
   const required = []
@@ -346,6 +434,32 @@ function fieldsToSchema(fields) {
     if (f.description) prop.description = f.description
     if (f.example) {
       try { prop.example = JSON.parse(f.example) } catch { prop.example = f.example }
+    }
+    // Size/limits constraints, mirroring OpenApiService on the backend.
+    if (f.type === 'integer' || f.type === 'number') {
+      const min = parseFloat(f.minValue)
+      const max = parseFloat(f.maxValue)
+      if (f.minValue !== undefined && f.minValue !== '' && !Number.isNaN(min)) prop.minimum = min
+      if (f.maxValue !== undefined && f.maxValue !== '' && !Number.isNaN(max)) prop.maximum = max
+    }
+    if (f.type === 'number') {
+      const pattern = precisionToPattern(f.precision)
+      if (pattern) {
+        prop['x-precision'] = f.precision
+        prop.pattern = pattern
+      }
+    }
+    if (f.type === 'string') {
+      const minLen = parseNonNegativeInt(f.minValue)
+      const maxLen = parseNonNegativeInt(f.maxValue)
+      if (minLen !== null) prop.minLength = minLen
+      if (maxLen !== null) prop.maxLength = maxLen
+    }
+    if (f.type === 'array') {
+      const minItems = parseNonNegativeInt(f.minValue)
+      const maxItems = parseNonNegativeInt(f.maxValue)
+      if (minItems !== null) prop.minItems = minItems
+      if (maxItems !== null) prop.maxItems = maxItems
     }
     if (f.type === 'array') {
       prop.items = f.items?.$ref ? { $ref: f.items.$ref } : (f.items || { type: 'string' })
@@ -385,6 +499,18 @@ function schemaToFields(schema) {
     if (prop.example !== undefined) {
       field.example = typeof prop.example === 'string' ? prop.example : JSON.stringify(prop.example)
     }
+    // Order matters: type-specific constraints overwrite the shared min/max slots.
+    if (prop.minimum !== undefined) field.minValue = String(prop.minimum)
+    if (prop.maximum !== undefined) field.maxValue = String(prop.maximum)
+    if (prop.type === 'string') {
+      if (prop.minLength !== undefined) field.minValue = String(prop.minLength)
+      if (prop.maxLength !== undefined) field.maxValue = String(prop.maxLength)
+    }
+    if (prop.type === 'array') {
+      if (prop.minItems !== undefined) field.minValue = String(prop.minItems)
+      if (prop.maxItems !== undefined) field.maxValue = String(prop.maxItems)
+    }
+    if (prop['x-precision'] !== undefined) field.precision = String(prop['x-precision'])
     if (prop.type === 'array') field.items = prop.items || { type: 'string' }
     if (prop.type === 'object' && prop.properties) {
       field.properties = schemaToFields(prop)

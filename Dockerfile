@@ -1,7 +1,7 @@
 # Build the production JAR first:
 #   cd frontend && npm run build && cp -r dist/* ../src/main/resources/static/
 #   cd .. && mvn -f pom.xml package -DskipTests
-FROM eclipse-temurin:17-jre
+FROM eclipse-temurin:21-jre
 
 WORKDIR /app
 

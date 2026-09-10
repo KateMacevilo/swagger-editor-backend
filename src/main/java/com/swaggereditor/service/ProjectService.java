@@ -29,13 +29,47 @@ public class ProjectService {
     private final GitLabService gitLabService;
     private final OpenApiService openApiService;
 
+    /**
+     * In-memory snapshot of the project list. findAll() costs N+1 GitLab API calls,
+     * so it is cached and invalidated on every write that goes through this service.
+     * Single-deployment assumption: with multiple replicas the cache would need
+     * to be shared (or disabled), otherwise replicas would serve stale lists.
+     */
+    private static final long LIST_CACHE_TTL_MS = 120_000;
+    private static final int LIST_LOAD_POOL_SIZE = 16;
+
+    private final Object listCacheLock = new Object();
+    private volatile List<ProjectSummaryDTO> listCache;
+    private volatile long listCacheAt;
+
     public List<ProjectSummaryDTO> findAll() {
+        List<ProjectSummaryDTO> cached = listCache;
+        if (cached != null && System.currentTimeMillis() - listCacheAt < LIST_CACHE_TTL_MS) {
+            return cached;
+        }
+        synchronized (listCacheLock) {
+            if (listCache != null && System.currentTimeMillis() - listCacheAt < LIST_CACHE_TTL_MS) {
+                return listCache;
+            }
+            List<ProjectSummaryDTO> fresh = Collections.unmodifiableList(loadAll());
+            listCache = fresh;
+            listCacheAt = System.currentTimeMillis();
+            return fresh;
+        }
+    }
+
+    /** Drop the cached project list after any write — the next findAll() reloads it. */
+    private void invalidateListCache() {
+        listCache = null;
+    }
+
+    private List<ProjectSummaryDTO> loadAll() {
         List<Map<String, Object>> entries = gitLabService.listDirectory("");
         if (entries.isEmpty()) {
             return Collections.emptyList();
         }
 
-        int poolSize = Math.min(entries.size(), 10);
+        int poolSize = Math.min(entries.size(), LIST_LOAD_POOL_SIZE);
         ExecutorService executor = Executors.newFixedThreadPool(poolSize);
         List<Future<ProjectSummaryDTO>> futures = new ArrayList<>();
 
@@ -112,6 +146,7 @@ public class ProjectService {
         }
         String json = openApiService.toJson(dto);
         gitLabService.writeFile(filePath, json, "Create project \"" + dto.getTitle() + "\"");
+        invalidateListCache();
         return new ProjectSummaryDTO(slug, dto.getTitle(), dto.getVersion(), filePath, dto.getEndpoints().size());
     }
 
@@ -120,12 +155,14 @@ public class ProjectService {
         dto.setEndpoints(dto.getEndpoints() != null ? dto.getEndpoints() : List.of());
         String json = openApiService.toJson(dto);
         gitLabService.writeFile(filePath, json, "Update project \"" + dto.getTitle() + "\"");
+        invalidateListCache();
         return new ProjectSummaryDTO(projectId, dto.getTitle(), dto.getVersion(), filePath, dto.getEndpoints().size());
     }
 
     public void delete(String projectId) {
         String filePath = projectId + "/openapi.json";
         gitLabService.deleteFile(filePath, "Delete project " + projectId);
+        invalidateListCache();
     }
 
     /** Rename a project: moves {oldId}/openapi.json to the slug of the new title. */
@@ -144,6 +181,7 @@ public class ProjectService {
         String content = gitLabService.readFile(oldPath);
         gitLabService.renameFile(oldPath, newPath, content,
                 "Rename project \"" + project.getTitle() + "\" -> \"" + newTitle + "\"");
+        invalidateListCache();
         project.setId(newId);
         project.setTitle(newTitle);
         project.setGitLabFilePath(newPath);
@@ -156,6 +194,7 @@ public class ProjectService {
         String filePath = slug + "/openapi.json";
         String json = openApiService.toJson(project);
         gitLabService.writeFile(filePath, json, "Import project \"" + project.getTitle() + "\"");
+        invalidateListCache();
         return new ProjectSummaryDTO(slug, project.getTitle(), project.getVersion(), filePath, project.getEndpointCount());
     }
 }

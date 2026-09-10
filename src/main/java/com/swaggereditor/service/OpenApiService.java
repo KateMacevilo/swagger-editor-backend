@@ -162,7 +162,7 @@ public class OpenApiService {
 
         Info info = new Info()
                 .title(project.getTitle())
-                .description(project.getDescription())
+                .description(cleanDescription(project.getDescription()))
                 .version(project.getVersion() != null ? project.getVersion() : "1.0.0");
         if (project.getTermsOfService() != null) {
             info.setTermsOfService(project.getTermsOfService());
@@ -178,13 +178,14 @@ public class OpenApiService {
         if (project.getServerUrl() != null && !project.getServerUrl().isBlank()) {
             openAPI.setServers(List.of(new Server()
                     .url(project.getServerUrl())
-                    .description(project.getServerDescription())));
+                    .description(cleanDescription(project.getServerDescription()))));
         }
 
         Paths paths = new Paths();
         if (project.getEndpoints() != null) {
             for (EndpointDTO endpoint : project.getEndpoints()) {
-                String path = endpoint.getPath();
+                // Paths go into the spec as URL identifiers: strip stray (e.g. trailing) whitespace.
+                String path = endpoint.getPath() != null ? endpoint.getPath().trim() : null;
                 PathItem pathItem = paths.containsKey(path) ? paths.get(path) : new PathItem();
                 pathItem = setOperation(pathItem, endpoint);
                 paths.addPathItem(path, pathItem);
@@ -239,7 +240,7 @@ public class OpenApiService {
     private Operation buildOperation(EndpointDTO endpoint) {
         Operation operation = new Operation();
         if (endpoint.getSummary() != null) operation.setSummary(endpoint.getSummary());
-        if (endpoint.getDescription() != null) operation.setDescription(endpoint.getDescription());
+        if (endpoint.getDescription() != null) operation.setDescription(cleanDescription(endpoint.getDescription()));
         if (endpoint.getOperationId() != null) operation.setOperationId(endpoint.getOperationId());
         if (Boolean.TRUE.equals(endpoint.getDeprecated())) operation.setDeprecated(true);
         if (Boolean.TRUE.equals(endpoint.getSecured())) {
@@ -290,7 +291,7 @@ public class OpenApiService {
                         .name(paramName)
                         .in(ap.getParamIn())
                         .required(Boolean.TRUE.equals(ap.getRequired()))
-                        .description(ap.getDescription())
+                        .description(cleanDescription(ap.getDescription()))
                         .schema(paramSchema);
                 if (ap.getExample() != null) param.setExample(ap.getExample());
                 params.add(param);
@@ -316,7 +317,7 @@ public class OpenApiService {
         } else {
             for (ApiResponseDTO resp : endpoint.getResponses()) {
                 ApiResponse apiResponse = new ApiResponse()
-                        .description(resp.getDescription() != null ? resp.getDescription() : "");
+                        .description(resp.getDescription() != null ? cleanDescription(resp.getDescription()) : "");
                 if (resp.getBodySchema() != null && !resp.getBodySchema().isBlank()) {
                     Schema<?> schema = jsonStringToSchema(resp.getBodySchema());
                     apiResponse.setContent(new Content().addMediaType("application/json",
@@ -326,7 +327,7 @@ public class OpenApiService {
                     Map<String, Header> headers = new LinkedHashMap<>();
                     for (Map.Entry<String, String> h : resp.getHeaders().entrySet()) {
                         headers.put(h.getKey(), new Header()
-                                .description(h.getValue())
+                                .description(cleanDescription(h.getValue()))
                                 .schema(new StringSchema()));
                     }
                     apiResponse.setHeaders(headers);
@@ -464,6 +465,11 @@ public class OpenApiService {
         }
     }
 
+    /** Trailing spaces/tabs at the end of each line are noise in Markdown descriptions. */
+    static String cleanDescription(String s) {
+        return s == null ? null : s.replaceAll("(?m)[ \\t]+$", "");
+    }
+
     public static String precisionToPattern(String precision) {        String[] parts = precision.split("[,.]");
         try {
             int total = Integer.parseInt(parts[0].trim());
@@ -549,20 +555,11 @@ public class OpenApiService {
             case "number" -> schema = new NumberSchema();
             case "boolean" -> schema = new BooleanSchema();
             case "string" -> schema = new StringSchema();
-            case "array" -> {
-                ArraySchema arr = new ArraySchema();
-                Object items = map.get("items");
-                if (items instanceof Map) {
-                    arr.setItems(mapToSchema((Map<String, Object>) items));
-                } else {
-                    arr.setItems(new StringSchema());
-                }
-                return arr;
-            }
+            case "array" -> schema = new ArraySchema();
             default -> schema = new ObjectSchema();
         }
         if (map.containsKey("format")) schema.setFormat((String) map.get("format"));
-        if (map.containsKey("description")) schema.setDescription((String) map.get("description"));
+        if (map.containsKey("description")) schema.setDescription(cleanDescription((String) map.get("description")));
         if (map.containsKey("example")) schema.setExample(map.get("example"));
         if (map.containsKey("default")) schema.setDefault(map.get("default"));
         if (map.containsKey("enum")) schema.setEnum((List) map.get("enum"));
@@ -597,6 +594,14 @@ public class OpenApiService {
                 schema.setRequired((List<String>) required);
             }
         }
+        if (schema instanceof ArraySchema arr) {
+            Object items = map.get("items");
+            if (items instanceof Map) {
+                arr.setItems(mapToSchema((Map<String, Object>) items));
+            } else {
+                arr.setItems(new StringSchema());
+            }
+        }
         return schema;
     }
 
@@ -628,7 +633,12 @@ public class OpenApiService {
             map.put("$ref", schema.get$ref());
             return map;
         }
-        if (schema.getType() != null) map.put("type", schema.getType());
+        // OpenAPI 3.1 docs parse into JsonSchema with the type in `types` (a set), leaving `type` null.
+        String type = schema.getType();
+        if (type == null && schema.getTypes() != null && !schema.getTypes().isEmpty()) {
+            type = schema.getTypes().iterator().next();
+        }
+        if (type != null) map.put("type", type);
         if (schema.getFormat() != null) map.put("format", schema.getFormat());
         if (schema.getDescription() != null) map.put("description", schema.getDescription());
         if (schema.getExample() != null) map.put("example", schema.getExample());
@@ -663,6 +673,10 @@ public class OpenApiService {
                 props.put(entry.getKey(), schemaToMap(entry.getValue()));
             }
             map.put("properties", props);
+        }
+        // 3.1-parsed arrays are JsonSchema, not ArraySchema — read items from any schema that has them.
+        if (!(schema instanceof ArraySchema) && schema.getItems() != null) {
+            map.put("items", schemaToMap(schema.getItems()));
         }
         if (schema instanceof ArraySchema arr && arr.getItems() != null) {
             map.put("items", schemaToMap(arr.getItems()));

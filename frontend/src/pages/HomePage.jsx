@@ -10,6 +10,7 @@ const DEFAULT_PROJECT = {
 
 export default function HomePage() {
   const [projects, setProjects] = useState([])
+  const [query, setQuery] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(DEFAULT_PROJECT)
   const [loading, setLoading] = useState(false)
@@ -120,6 +121,18 @@ export default function HomePage() {
         </div>
       )}
 
+      {projects.length > 0 && (
+        <div className="mb-4">
+          <input
+            type="text"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Поиск проекта по названию…"
+            className="w-full md:w-80 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+        </div>
+      )}
+
       {projects.length === 0 ? (
         <div className="text-center py-20 text-gray-400">
           <div className="text-6xl mb-4">📄</div>
@@ -127,7 +140,9 @@ export default function HomePage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {projects.map(p => (
+          {projects
+            .filter(p => !query || p.title.toLowerCase().includes(query.toLowerCase()))
+            .map(p => (
             <div
               key={p.id}
               onClick={() => navigate(`/project/${p.id}`)}
@@ -159,6 +174,9 @@ export default function HomePage() {
             </div>
           ))}
         </div>
+      )}
+      {projects.length > 0 && query && projects.every(p => !p.title.toLowerCase().includes(query.toLowerCase())) && (
+        <p className="text-sm text-gray-400 py-6 text-center">Ничего не найдено по запросу «{query}»</p>
       )}
     </div>
   )

@@ -108,11 +108,12 @@ export default function ParameterBuilder({ parameters, onChange }) {
               rows={2}
               className="flex-1 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 resize-none"
             />
-            <input
+            <textarea
               value={param.example || ''}
               onChange={e => update(idx, 'example', e.target.value)}
               placeholder="Пример"
-              className="w-32 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-400"
+              rows={2}
+              className="w-32 px-2 py-1.5 border border-gray-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-blue-400 resize min-h-[34px]"
             />
           </div>
         </div>
